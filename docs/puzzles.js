@@ -72,29 +72,21 @@ export const PUZZLES = [
   "spots": [
    {
     "id": "clock",
-    "x": 50,
-    "y": 28,
     "label": "벽시계",
     "text": "숫자가 모두 좌우로 뒤집혔다. 3이 왼쪽, 9가 오른쪽에 있다. 바늘은 시계 반대 방향으로 돈다."
    },
    {
     "id": "chair",
-    "x": 50,
-    "y": 60,
     "label": "가죽 의자",
     "text": "등받이가 높고 발판과 팔걸이가 달렸다. 의자는 시계를 등지고 놓여 있다."
    },
    {
     "id": "shelf",
-    "x": 86,
-    "y": 37,
     "label": "선반",
     "text": "가위 세 자루, 빗, 하얗게 개켜 둔 천."
    },
    {
     "id": "floor",
-    "x": 30,
-    "y": 91,
     "label": "바닥",
     "text": "의자 둘레만 유난히 자주 쓸어 반질반질하다."
    }
@@ -104,6 +96,7 @@ export const PUZZLES = [
    "손님들은 시계를 직접 쳐다보나요?",
    "이 가게는 물건을 파는 곳인가요?"
   ],
+  "photo": "img/mirror-clock.jpg",
   "facts": [
    {
     "id": "f1",
@@ -137,29 +130,21 @@ export const PUZZLES = [
   "spots": [
    {
     "id": "dice",
-    "x": 80,
-    "y": 75,
     "label": "주사위",
     "text": "주사위 두 개. 하나는 모서리가 살짝 깨져 있다."
    },
    {
     "id": "money",
-    "x": 15,
-    "y": 72,
     "label": "지폐 더미",
     "text": "알록달록한 지폐. 한 장에 \"100,000\"이라고 적혀 있는데, 종이가 너무 얇다."
    },
    {
     "id": "bag",
-    "x": 89,
-    "y": 22,
     "label": "현관의 가방",
     "text": "커다란 가방, 아직 풀지 않았다. 손잡이에 종이 띠가 감겨 있다."
    },
    {
     "id": "diary",
-    "x": 15,
-    "y": 10,
     "label": "일기장",
     "text": "\"올해 가장 행복한 날\" 아래, 삐뚤빼뚤한 작은 손바닥 그림이 함께 그려져 있다."
    }
@@ -169,6 +154,7 @@ export const PUZZLES = [
    "그날 여자는 혼자였나요?",
    "서울과 무인도는 실제 장소인가요?"
   ],
+  "photo": "img/board-night.jpg",
   "facts": [
    {
     "id": "f1",
@@ -260,29 +246,21 @@ export const PUZZLES = [
   "spots": [
    {
     "id": "side",
-    "x": 84.5,
-    "y": 45,
     "label": "무대 오른쪽 사람",
     "text": "조명을 받으며 서 있다. 연주 내내 두 손을 쉴 새 없이 움직였다."
    },
    {
     "id": "balloon",
-    "x": 29.5,
-    "y": 76,
     "label": "풍선",
     "text": "관객 여럿이 부푼 풍선을 꼭 끌어안고 있다. 터뜨리려는 건 아닌 것 같다."
    },
    {
     "id": "floor",
-    "x": 70,
-    "y": 72,
     "label": "객석 앞 바닥",
     "text": "넓은 판이 깔려 있다. 신발을 벗고 그 위에 발을 올린 관객이 많다."
    },
    {
     "id": "pianist",
-    "x": 23,
-    "y": 42,
     "label": "피아니스트",
     "text": "마지막 음을 치고 객석을 돌아본 채 한참 그대로 있었다."
    }
@@ -292,6 +270,7 @@ export const PUZZLES = [
    "객석에 사람이 정말 있었나요?",
    "박수를 치면 안 되는 규칙이 있었나요?"
   ],
+  "photo": "img/silent-applause.jpg",
   "facts": [
    {
     "id": "f1",
@@ -325,29 +304,21 @@ export const PUZZLES = [
   "spots": [
    {
     "id": "thermo",
-    "x": 79,
-    "y": 14.5,
     "label": "보일러 조절기",
     "text": "설정은 22도인데 화면에 \"31\"이 깜빡인다."
    },
    {
     "id": "window",
-    "x": 20,
-    "y": 30,
     "label": "창문",
     "text": "한 뼘만 열려 있다. 창틀에 눈이 쌓였다."
    },
    {
     "id": "fan",
-    "x": 82.5,
-    "y": 52,
     "label": "선풍기",
     "text": "회전을 끄고 창 쪽으로만 바람을 보낸다. 남자가 일부러 방향을 맞춰 놓았다."
    },
    {
     "id": "door",
-    "x": 95.5,
-    "y": 42,
     "label": "다용도실 문",
     "text": "문틈으로 희미하게 웅웅거리는 소리가 난다. 안에 보일러가 있다."
    }
@@ -357,6 +328,7 @@ export const PUZZLES = [
    "그날 밤 집에 불이 났나요?",
    "선풍기가 아니었어도 결과는 같았나요?"
   ],
+  "photo": "img/winter-fan.jpg",
   "facts": [
    {
     "id": "f1",
@@ -390,29 +362,21 @@ export const PUZZLES = [
   "spots": [
    {
     "id": "loupe",
-    "x": 28,
-    "y": 84,
     "label": "돋보기",
     "text": "렌즈에 손자국이 많다. 엄마는 늘 사진 속 딸의 얼굴 쪽에 대고 본다."
    },
    {
     "id": "girl",
-    "x": 56,
-    "y": 57,
     "label": "사진 속 딸",
     "text": "졸업 꽃다발을 든 딸이 반짝이는 선글라스를 끼고 있다."
    },
    {
     "id": "cups",
-    "x": 84,
-    "y": 79,
     "label": "찻잔 두 개",
     "text": "찻잔이 두 개. 하나는 손대지 않은 채 식어 간다."
    },
    {
     "id": "flower",
-    "x": 13,
-    "y": 41,
     "label": "흰 국화",
     "text": "흰 국화 한 송이. 해마다 이날에만 사 온다."
    }
@@ -422,6 +386,7 @@ export const PUZZLES = [
    "사진에 아빠가 정말 하나도 안 나오나요?",
    "엄마는 사진에서 무언가를 찾고 있나요?"
   ],
+  "photo": "img/best-photo.jpg",
   "facts": [
    {
     "id": "f1",
@@ -455,29 +420,21 @@ export const PUZZLES = [
   "spots": [
    {
     "id": "turtle",
-    "x": 53.5,
-    "y": 91,
     "label": "거북",
     "text": "등껍질에 금이 갔지만 거북은 멀쩡히 걷는다."
    },
    {
     "id": "hat",
-    "x": 84,
-    "y": 70,
     "label": "뒤집힌 모자",
     "text": "남자의 모자가 열 걸음 떨어진 곳에 뒤집혀 있다. 바람에 날아간 것 같다."
    },
    {
     "id": "speck",
-    "x": 78,
-    "y": 14,
     "label": "하늘의 점",
     "text": "아주 높은 곳에서 점 하나가 원을 그리며 돈다."
    },
    {
     "id": "rocks",
-    "x": 12,
-    "y": 56,
     "label": "하얀 바위들",
     "text": "둥글고 하얀 바위들. 주변에 깨진 껍데기 조각이 흩어져 있다."
    }
@@ -487,6 +444,7 @@ export const PUZZLES = [
    "남자는 높은 곳에서 떨어졌나요?",
    "거북이 이 일과 관련 있나요?"
   ],
+  "photo": "img/falling-turtle.jpg",
   "facts": [
    {
     "id": "f1",
@@ -521,29 +479,21 @@ export const PUZZLES = [
   "spots": [
    {
     "id": "screen",
-    "x": 54,
-    "y": 49,
     "label": "피아노 화면",
     "text": "작은 화면에 \"00:00\"과 재생 표시가 떠 있다."
    },
    {
     "id": "score",
-    "x": 62.5,
-    "y": 38,
     "label": "보면대의 악보",
     "text": "손으로 그린 악보. 제목 칸은 지워져 있고, 구석에 30년 전 날짜가 적혀 있다."
    },
    {
     "id": "cups",
-    "x": 81,
-    "y": 72,
     "label": "찻잔 두 개",
     "text": "찻잔이 두 개. 선생 말고 손님이 한 명 있었다."
    },
    {
     "id": "schedule",
-    "x": 94.5,
-    "y": 70,
     "label": "레슨 일정표",
     "text": "어제 칸: \"22:00 서진 — 마지막 레슨\""
    }
@@ -553,6 +503,7 @@ export const PUZZLES = [
    "선생은 누군가에게 살해됐나요?",
    "피아노 소리를 들은 이웃 중에 범인이 있나요?"
   ],
+  "photo": "img/midnight-piano.jpg",
   "facts": [
    {
     "id": "f1",
@@ -613,6 +564,7 @@ export const PUZZLES = [
    "누군가 남편 휴대폰을 쓰고 있나요?",
    "꽃집이 중요한 장소인가요?"
   ],
+  "photo": "img/last-message.jpg",
   "facts": [
    {
     "id": "f1",
@@ -669,6 +621,7 @@ export const PUZZLES = [
    "아이는 책 내용을 외우고 있었나요?",
    "책이 특별한 책인가요?"
   ],
+  "photo": "img/dark-reading.jpg",
   "facts": [
    {
     "id": "f1",
@@ -726,6 +679,7 @@ export const PUZZLES = [
    "총을 쏜 배우가 범인인가요?",
    "관객들은 무슨 일이 일어났는지 알았나요?"
   ],
+  "photo": "img/stage-gun.jpg",
   "facts": [
    {
     "id": "f1",
@@ -786,6 +740,7 @@ export const PUZZLES = [
    "두드리는 시간이 매일 같나요?",
    "할아버지가 생전에 하던 일과 관련 있나요?"
   ],
+  "photo": "img/morning-knock.jpg",
   "facts": [
    {
     "id": "f1",
@@ -843,6 +798,7 @@ export const PUZZLES = [
    "유서의 내용이 중요한가요?",
    "그날 밤 서재에 손님이 있었나요?"
   ],
+  "photo": "img/typo-note.jpg",
   "facts": [
    {
     "id": "f1",
@@ -899,6 +855,7 @@ export const PUZZLES = [
    "오늘 밤 할아버지가 편의점에 왔나요?",
    "할아버지와 알바생은 가족인가요?"
   ],
+  "photo": "img/milk-promise.jpg",
   "facts": [
    {
     "id": "f1",
@@ -955,6 +912,7 @@ export const PUZZLES = [
    "상자 안에 살아 있는 것이 있었나요?",
    "소리가 나지 않은 게 중요한가요?"
   ],
+  "photo": "img/air-holes.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1011,6 +969,7 @@ export const PUZZLES = [
    "두 사람은 이혼했다가 재혼했나요?",
    "신랑이 아픈가요?"
   ],
+  "photo": "img/second-wedding.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1067,6 +1026,7 @@ export const PUZZLES = [
    "경기 중에 무슨 일이 있었나요?",
    "남자와 우승자는 아는 사이인가요?"
   ],
+  "photo": "img/last-medal.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1123,6 +1083,7 @@ export const PUZZLES = [
    "손님은 목적지를 몰랐나요?",
    "기사와 손님은 아는 사이인가요?"
   ],
+  "photo": "img/taxi-3am.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1179,6 +1140,7 @@ export const PUZZLES = [
    "신부가 스스로 떠났나요?",
    "신랑은 신부가 떠날 걸 알았나요?"
   ],
+  "photo": "img/runaway-bride.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1236,6 +1198,7 @@ export const PUZZLES = [
    "할머니는 사기라는 걸 알았나요?",
    "사기범과 할머니는 아는 사이인가요?"
   ],
+  "photo": "img/phishing-grandma.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1293,6 +1256,7 @@ export const PUZZLES = [
    "눈사람을 만든 건 아이들인가요?",
    "돈과 관련 있나요?"
   ],
+  "photo": "img/snowman-wallet.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1349,6 +1313,7 @@ export const PUZZLES = [
    "그날 김 부장은 혼자 쳤나요?",
    "그 시간에 김 부장은 다른 곳에 있어야 했나요?"
   ],
+  "photo": "img/secret-hole-in-one.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1405,6 +1370,7 @@ export const PUZZLES = [
    "헌혈증에 적힌 내용이 중요한가요?",
    "누가 그에게 사실을 알려 줬나요?"
   ],
+  "photo": "img/blood-type.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1462,6 +1428,7 @@ export const PUZZLES = [
    "문이 잠겨 있었나요?",
    "사고인가요?"
   ],
+  "photo": "img/freezer.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1519,6 +1486,7 @@ export const PUZZLES = [
    "범인은 가족인가요?",
    "물고기가 죽었나요?"
   ],
+  "photo": "img/empty-tank.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1576,6 +1544,7 @@ export const PUZZLES = [
    "용의자의 알리바이가 거짓인가요?",
    "날씨가 중요한가요?"
   ],
+  "photo": "img/dry-shoes.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1633,6 +1602,7 @@ export const PUZZLES = [
    "집주인이 불을 질렀나요?",
    "경찰은 미리 알고 있었나요?"
   ],
+  "photo": "img/cancelled-policy.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1690,6 +1660,7 @@ export const PUZZLES = [
    "아이가 무슨 잘못을 저질렀나요?",
    "가족과 관련 있나요?"
   ],
+  "photo": "img/acrostic.jpg",
   "facts": [
    {
     "id": "f1",
@@ -1747,6 +1718,7 @@ export const PUZZLES = [
    "그림이 중요한가요?",
    "집주인이 그림을 거꾸로 걸었나요?"
   ],
+  "photo": "img/upside-painting.jpg",
   "facts": [
    {
     "id": "f1",
