@@ -327,3 +327,27 @@ p{margin:0}
 .scene .off{transform:translate(1.4px,-1px)}
 .scene text{font-family:var(--f-type);font-weight:700;fill:var(--inkA)}
 .scene text.hand{font-family:var(--f-display);font-weight:800}
+
+/* 사진 삽화 · 단서 사진 · 사건 파일 도구 */
+.plate img.photo{display:block;width:100%;height:100%;object-fit:cover}
+.case-card .thumb img.photo{display:block;width:100%;height:100%;object-fit:cover}
+.noart{display:grid;place-items:center;width:100%;height:100%;background:repeating-linear-gradient(135deg,#0E141B 0 14px,#111821 14px 28px)}
+.noart span{font-family:var(--f-type);font-size:12px;font-weight:700;letter-spacing:.18em;color:var(--faint);border:1px dashed var(--line);padding:6px 12px}
+.case-card .thumb:has(.noart),.plate:has(.noart){filter:none}
+.case-card .thumb .closed{position:absolute;right:10px;bottom:10px;z-index:1;font-family:var(--f-display);font-weight:800;font-size:15px;letter-spacing:.04em;color:#F2D9D6;border:2px solid var(--red);background:rgba(38,19,19,.85);padding:4px 10px;transform:rotate(-4deg)}
+.case-card .thumb .closed.fail{color:var(--muted);border-color:var(--faint);background:rgba(16,22,29,.85)}
+.memo{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.memo button{border:1px solid var(--line);background:#0B1016;border-radius:2px;padding:4px 10px;font-size:12.5px;color:var(--fg)}
+.memo button:hover{border-color:var(--tent)}
+.memo button[aria-pressed="true"]{background:var(--tent);border-color:var(--tent);color:#14110A}
+.print figcaption p{margin:0}
+.clue-body{display:flex;flex-direction:column;gap:8px;min-width:0}
+.clue-img{display:block;padding:0;border:1px solid var(--line);border-radius:2px;background:#0B1016;overflow:hidden;aspect-ratio:4/3;width:100%;max-width:100%}
+.clue-img img{display:block;width:100%;height:100%;object-fit:cover;filter:saturate(.9) contrast(1.05)}
+.clue-img:hover{border-color:var(--tent)}
+.clue-plate{aspect-ratio:4/3;background:#0B1016}
+.arc-tools{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;margin-bottom:18px}
+.arc-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.arc-search{width:220px;max-width:100%;padding:7px 11px;font-size:14px}
+.arc-sort{width:auto;padding:7px 10px;font-size:14px}
+.cases>.empty{grid-column:1 / -1}

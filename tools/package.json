@@ -1,0 +1,9 @@
+{
+  "name": "turtle-soup-tools",
+  "private": true,
+  "type": "module",
+  "description": "바다거북 수프 식탁 빌드·운영 도구",
+  "devDependencies": {
+    "sharp": "^0.34.0"
+  }
+}

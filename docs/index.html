@@ -59,6 +59,18 @@
       <h2>사건 파일</h2>
       <p id="homeNote">방을 만들거나 코드로 들어가면 사건을 고를 수 있어요.</p>
     </div>
+    <div class="arc-tools" id="arcTools">
+      <div class="chips" id="arcChips"></div>
+      <div class="arc-right">
+        <input class="field arc-search" id="arcSearch" type="search" placeholder="사건 제목·내용 검색" autocomplete="off" aria-label="사건 검색">
+        <select class="field arc-sort" id="arcSort" aria-label="정렬">
+          <option value="no">번호순</option>
+          <option value="easy">쉬운 순</option>
+          <option value="hard">어려운 순</option>
+        </select>
+        <span class="count" id="arcCount"></span>
+      </div>
+    </div>
     <div class="cases" id="cases"></div>
   </section>
 

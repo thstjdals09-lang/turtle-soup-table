@@ -63,6 +63,7 @@ async function handle(b: Row) {
     case "reveal": return reveal(b);
     case "clear": return clear(b);
     case "seed": return seed(b);
+    case "upload": return upload(b);
     case "bot_ping": return botPing(b);
     case "bot_done": return botDone(b);
     default: throw new Fail("bad_action");
@@ -98,6 +99,17 @@ async function seed(b: Row) {
   if (error) throw error;
   puzzles.clear();
   return { ok: true, count: rows.length };
+}
+
+// 단서 사진 올리기 (tools/art.mjs). 무작위 이름이라 단서가 열리기 전까지 주소를 알 수 없다.
+async function upload(b: Row) {
+  await admin(b.token);
+  const name = str(b.name, 80);
+  if (!/^[a-f0-9]{32}[.]jpg$/.test(name) || typeof b.b64 !== "string") throw new Fail("bad_upload");
+  const bytes = Uint8Array.from(atob(b.b64), (c) => c.charCodeAt(0));
+  const { error } = await db.storage.from("soup-art").upload(name, bytes, { contentType: "image/jpeg", upsert: false });
+  if (error) throw error;
+  return { url: db.storage.from("soup-art").getPublicUrl(name).data.publicUrl };
 }
 
 /* ---------- 판정 방식 ---------- */
@@ -351,7 +363,7 @@ async function reveal(b: Row) {
   for (const f of s.facts) if (d.over || d.revealed.has(f.id)) facts[f.id] = f.label;
   return {
     facts,
-    clues: d.clues.filter((c: Row) => c.open).map((c: Row) => ({ i: c.i, text: s.clues[c.i]?.text || "", layer: s.layers?.[c.id] || "" })),
+    clues: d.clues.filter((c: Row) => c.open).map((c: Row) => ({ i: c.i, text: s.clues[c.i]?.text || "", layer: s.layers?.[c.id] || "", img: s.clues[c.i]?.img || "" })),
     truth: d.over ? s.truth : null,
   };
 }

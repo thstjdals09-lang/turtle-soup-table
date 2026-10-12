@@ -102,7 +102,8 @@ const S = {
   room: null, host: null, channel: null, conn: 'off', judge: null, botSeen: 0,
   events: new Map(), loaded: false, peers: [], typing: null, lastTrack: '',
   spot: null, seen: {}, err: '', lobbyErr: '', busy: false,
-  pins: new Set(lsGet('soup.pins', []) || []), reveal: new Map()
+  pins: new Set(lsGet('soup.pins', []) || []), reveal: new Map(),
+  arc: { f: 'all', q: '', sort: 'no', ...(lsGet('soup.arc', {}) || {}) }
 };
 const playing = () => S.play;
 const scopeOf = kind => (kind === 'versus' ? me : 'coop');
@@ -263,6 +264,12 @@ function revealOf(pid, kind, d) {
 }
 
 /* ---------- 삽화 ---------- */
+function artHTML(pid, rv, fresh) {
+  const p = P[pid];
+  if (p.photo) return `<img class="photo" src="${p.photo}" alt="${p.title} 사건 사진" loading="lazy" decoding="async">`;
+  if (p.scene) return sceneSVG(pid, rv, fresh);
+  return `<div class="noart"><span>증거 사진 준비 중</span></div>`;
+}
 function sceneSVG(pid, rv, fresh) {
   const p = P[pid];
   let layers = '';
@@ -272,15 +279,18 @@ function sceneSVG(pid, rv, fresh) {
 function plateEl(pid, rv, fresh, big) {
   const spots = P[pid].spots || [];
   const seen = S.seen[pid + ':spots'] || (S.seen[pid + ':spots'] = new Set(spots.map(x => x.id)));
-  const plate = h('div', { class: 'plate', svg: sceneSVG(pid, rv, fresh) });
-  spots.forEach((sp, i) => plate.append(h('button', {
+  const plate = h('div', { class: 'plate', svg: artHTML(pid, rv, fresh) });
+  spots.forEach((sp, i) => sp.x != null && plate.append(h('button', {
     class: 'spot' + (seen.has(sp.id) ? '' : ' new'), type: 'button', style: `left:${sp.x}%;top:${sp.y}%`,
     'aria-pressed': String(S.spot === sp.id), 'aria-label': sp.label + ' 살펴보기',
     onclick: () => { S.spot = S.spot === sp.id ? null : sp.id; if (big) openZoom(); else render(); }
   }, String(i + 1))));
   if (!big) plate.append(h('button', { class: 'zoom', type: 'button', onclick: openZoom }, '확대'));
   const cur = spots.find(x => x.id === S.spot);
-  const cap = cur ? [h('b', { text: cur.label }), ' — ', cur.text] : [h('span', { class: 'dim' }, '번호를 눌러 그림 속 사물을 살펴보세요. 15·30·45문마다 단서 그림이 한 장씩 더 찍혀요.')];
+  const loose = spots.filter(sp => sp.x == null);
+  const memo = loose.length ? h('div', { class: 'memo' }, loose.map(sp => h('button', { type: 'button', 'aria-pressed': String(S.spot === sp.id), onclick: () => { S.spot = S.spot === sp.id ? null : sp.id; if (big) openZoom(); else render(); } }, sp.label))) : null;
+  const hint = loose.length ? '현장 메모를 눌러 사진 속 사물을 살펴보세요. 15·30·45문마다 단서 사진이 한 장씩 열려요.' : '번호를 눌러 그림 속 사물을 살펴보세요. 15·30·45문마다 단서 그림이 한 장씩 더 찍혀요.';
+  const cap = [memo, cur ? h('p', null, h('b', { text: cur.label }), ' — ', cur.text) : h('p', { class: 'dim' }, hint)];
   return { plate, cap };
 }
 
@@ -393,6 +403,13 @@ async function copy(text, btn) {
   try { await navigator.clipboard.writeText(text); if (btn) btn.textContent = '복사했어요'; }
   catch { const el = $('#inviteLink'); if (el) { el.focus(); el.select(); } if (btn) btn.textContent = '선택해 두었어요. 복사해 주세요'; }
 }
+function openClue(c, text) {
+  let closeBtn;
+  sheetShell('단서 사진', close => h('div', { class: 'zoom-sheet', role: 'dialog', 'aria-modal': 'true' },
+    h('div', { class: 'plate clue-plate' }, h('img', { class: 'photo', src: c.img, alt: text || '단서 사진' })),
+    h('div', { class: 'bar2' }, h('span', null, h('b', null, '단서 #' + (c.i + 1)), ' — ', text || ''), closeBtn = h('button', { type: 'button', onclick: close }, '닫기'))));
+  closeBtn.focus();
+}
 function openZoom() {
   const pid = S.caseId; if (!pid) return;
   const d = dOf(pid); const rv = revealOf(pid, playing(), d);
@@ -461,7 +478,15 @@ function renderHome() {
       .map(([a, t]) => h('span', { class: 'legend-item' }, stamp(a), t)));
   }
   renderLobby();
-  put($('#cases'), PUZZLES.map((p, i) => {
+  renderArchiveTools();
+  const q = S.arc.q.trim().toLowerCase();
+  let list = PUZZLES.map((p, i) => ({ p, i, st: caseState(p) }))
+    .filter(x => S.arc.f === 'all' || x.st === S.arc.f)
+    .filter(x => !q || (x.p.title + ' ' + x.p.story + ' ' + (x.p.tags || []).join(' ')).toLowerCase().includes(q));
+  if (S.arc.sort === 'easy') list.sort((a, b) => a.p.level - b.p.level || a.i - b.i);
+  if (S.arc.sort === 'hard') list.sort((a, b) => b.p.level - a.p.level || a.i - b.i);
+  $('#arcCount').textContent = `${list.length}건`;
+  put($('#cases'), list.length ? list.map(({ p, i }) => {
     const d = S.room ? dOf(p.id, 'coop') : null;
     const vd = S.room ? dOf(p.id, 'versus') : null;
     const ranks = S.room ? rankFor(p.id) : [];
@@ -474,7 +499,7 @@ function renderHome() {
     else status = h('span', { class: 'pill' }, '아직 아무도 안 앉음');
     const best = ranks.find(r => r.st === 'solved');
     return h('button', { class: 'case-card', type: 'button', onclick: () => openCase(p.id) },
-      h('div', { class: 'thumb', svg: sceneSVG(p.id, d?.over ? S.reveal.get(p.id + '|coop')?.data : null) }, h('span', { class: 'no' }, num(i))),
+      h('div', { class: 'thumb', svg: artHTML(p.id, d?.over ? S.reveal.get(p.id + '|coop')?.data : null) }, h('span', { class: 'no' }, num(i)), d?.over ? h('span', { class: 'closed' + (d.over === 'solved' ? '' : ' fail') }, d.over === 'solved' ? '사건 종결' : '미제 처리') : null),
       h('div', { class: 'body' },
         h('h3', { text: p.title }),
         h('div', { class: 'tagline' }, (p.tags || []).map(g => h('span', { class: 'genre' }, g))),
@@ -483,11 +508,22 @@ function renderHome() {
         h('div', { class: 'foot' }, bowls(p.level),
           here.length ? h('span', { class: 'faces' }, here.slice(0, 3).map(x => h('img', { src: who(x.id).av, alt: who(x.id).name }))) : null,
           status)));
-  }));
+  }) : h('p', { class: 'empty' }, '조건에 맞는 사건이 없어요.'));
   $('#homeNote').textContent = S.room
     ? '함께 풀기는 질문과 답을 방 전체가 같이 보고, 경쟁전은 각자 따로 묻고 점수판만 나눠요.'
     : '위에서 방을 만들거나 코드로 들어가면 사건을 고를 수 있어요.';
 }
+function caseState(p) {
+  if (!S.room) return 'new';
+  const d = dOf(p.id, 'coop');
+  return d.over ? 'closed' : d.L.some(e => e.kind !== 'chat') ? 'open' : 'new';
+}
+function renderArchiveTools() {
+  const n = st => PUZZLES.filter(p => caseState(p) === st).length;
+  const chips = [['all', '전체', PUZZLES.length], ['new', '미착수', n('new')], ['open', '수사 중', n('open')], ['closed', '종결', n('closed')]];
+  put($('#arcChips'), chips.map(([k, t, c]) => h('button', { class: 'chip', type: 'button', 'aria-pressed': String(S.arc.f === k), onclick: () => { S.arc.f = k; saveArc(); render(); } }, `${t} ${c}`)));
+}
+function saveArc() { lsSet('soup.arc', S.arc); }
 function rankFor(pid) {
   const by = new Map();
   for (const [k, list] of index().logs) {
@@ -535,9 +571,17 @@ function renderTable() {
   const seenOpen = S.seen[seenKey] || (S.seen[seenKey] = new Set(d.open));
   const fresh = new Set([...d.open].filter(x => !seenOpen.has(x)));
   const { plate, cap } = plateEl(pid, rv, fresh, false);
-  const clueText = i => (rv.clues || []).find(c => c.i === i)?.text;
+  const clueOf = i => (rv.clues || []).find(c => c.i === i);
   const clueCards = d.clues.map(c => {
-    if (c.open) return h('div', { class: 'card clue' + (fresh.has(c.id) ? ' fresh' : '') }, h('span', { class: 'n' }, '#' + (c.i + 1)), h('p', null, clueText(c.i) || h('span', { class: 'dots' }, '단서를 펼치는 중')), h('small', null, c.bought ? `긴급 열람 (+${BUY}문) · 삽화에 찍힘` : `${c.at}문 단서 · 삽화에 찍힘`));
+    if (c.open) {
+      const got = clueOf(c.i);
+      const where = got?.img ? '단서 사진' : '삽화에 찍힘';
+      return h('div', { class: 'card clue' + (fresh.has(c.id) ? ' fresh' : '') }, h('span', { class: 'n' }, '#' + (c.i + 1)),
+        h('div', { class: 'clue-body' },
+          got?.img ? h('button', { class: 'clue-img', type: 'button', 'aria-label': '단서 사진 크게 보기', onclick: () => openClue(got, got.text) }, h('img', { src: got.img, alt: '', loading: 'lazy' })) : null,
+          h('p', null, got?.text || h('span', { class: 'dots' }, '단서를 펼치는 중'))),
+        h('small', null, c.bought ? `긴급 열람 (+${BUY}문) · ${where}` : `${c.at}문 단서 · ${where}`));
+    }
     const isNext = d.nextClue === c;
     return h('div', { class: 'card locked' }, h('span', { class: 'n' }, '#' + (c.i + 1)), h('p', null, `${c.at}문에 열려요`),
       isNext && !d.over ? h('div', { class: 'act' }, h('button', { class: 'btn small', type: 'button', disabled: S.busy, onclick: buyClue }, `긴급 열람 · +${BUY}문`)) : null);
@@ -717,6 +761,10 @@ function start() {
   $('#brand').addEventListener('click', goHome);
   $('#backBtn').addEventListener('click', goHome);
   $('#nameChip').addEventListener('click', nameSheet);
+  const qIn = $('#arcSearch'), sortIn = $('#arcSort');
+  qIn.value = S.arc.q; sortIn.value = S.arc.sort;
+  qIn.addEventListener('input', () => { S.arc.q = qIn.value; saveArc(); renderHome(); });
+  sortIn.addEventListener('change', () => { S.arc.sort = sortIn.value; saveArc(); renderHome(); });
   $('#roomChip').addEventListener('click', roomSheet);
   $('#segAsk').addEventListener('click', () => { S.compose = 'ask'; syncComposer(); });
   $('#segChat').addEventListener('click', () => { S.compose = 'chat'; syncComposer(); });
