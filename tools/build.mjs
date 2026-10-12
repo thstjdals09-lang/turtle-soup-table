@@ -29,6 +29,8 @@ const pub = ALL.map(({ secret, art, ...p }) => {
   const photo = existsSync(join(root, 'docs/img', p.id + '.jpg')) ? `img/${p.id}.jpg` : undefined;
   return {
     ...p,
+    // 사진을 쓰면 그림 기준 좌표는 맞지 않으므로 현장 메모 목록으로 돌린다
+    spots: photo ? p.spots.map(({ x, y, ...sp }) => sp) : p.spots,
     scene: p.scene ? squash(p.scene) : undefined,
     photo,
     facts: secret.facts.map(f => ({ id: f.id, need: f.need })),

@@ -575,7 +575,7 @@ function renderTable() {
   const clueCards = d.clues.map(c => {
     if (c.open) {
       const got = clueOf(c.i);
-      const where = got?.img ? '단서 사진' : '삽화에 찍힘';
+      const where = got?.img ? '단서 사진' : p.photo ? '단서 메모' : '삽화에 찍힘';
       return h('div', { class: 'card clue' + (fresh.has(c.id) ? ' fresh' : '') }, h('span', { class: 'n' }, '#' + (c.i + 1)),
         h('div', { class: 'clue-body' },
           got?.img ? h('button', { class: 'clue-img', type: 'button', 'aria-label': '단서 사진 크게 보기', onclick: () => openClue(got, got.text) }, h('img', { src: got.img, alt: '', loading: 'lazy' })) : null,
