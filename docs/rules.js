@@ -45,7 +45,8 @@ export function derive(meta, list) {
     } else if (e.kind === 'end') {
       ended = true;
     } else if (e.kind === 'guess' && e.status === 'done') {
-      for (const [f, v] of Object.entries(e.hits || {})) if (v === 'hit' && ids.has(f) && !revealed.has(f)) revealed.set(f, { by: e.player, at: e.created_at, via: 'guess', ev: e.id });
+      // 틀린 제출은 몇 개 맞혔는지만 알려 주고 키워드는 열지 않는다 (가설을 여러 번 던져 키워드를 캐내지 못하게)
+      if (e.ok) for (const [f, v] of Object.entries(e.hits || {})) if (v === 'hit' && ids.has(f) && !revealed.has(f)) revealed.set(f, { by: e.player, at: e.created_at, via: 'guess', ev: e.id });
       if (e.ok) { over = 'solved'; overEv = e; }
       else if (e.final) { over = 'failed'; overEv = e; n += FAIL; }
       else { wrong++; n += WRONG; }

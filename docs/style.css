@@ -775,3 +775,36 @@ body.in-table:has(#talk:not([hidden])) .desk-scroll{padding-bottom:56px}
 .rung .rr,.rung .rt{font-size:11.5px;color:var(--muted)}
 .rung.on{opacity:1;border-color:currentColor;background:#111A22;box-shadow:inset 0 0 0 1px currentColor,0 0 26px -8px currentColor;transform:translateY(-2px)}
 @media (max-width:700px){.ladder{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+/* ---------- 한 열 사건 화면: 왼쪽 열 없이 증거는 한 줄 ---------- */
+body.in-table #table{width:100%;max-width:1000px;margin:0 auto}
+body.in-table .table-grid{display:flex;flex-direction:column;gap:10px}
+body.in-table .soup{flex:none;max-height:46%;overflow:auto}
+body.in-table .desk{flex:1;min-height:0}
+.case-bar{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;flex:none;padding:0 0 10px}
+.case-bar::-webkit-scrollbar{display:none}
+.cb-item{flex:none;display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:#0E141B;border-radius:8px;padding:4px 12px 4px 4px;min-height:48px;color:var(--fg);text-align:left;transition:border-color .15s}
+.cb-item:hover{border-color:#34495C}
+.cb-item img{width:52px;height:40px;object-fit:cover;border-radius:5px;flex:none}
+.cb-ico{width:40px;height:40px;border-radius:5px;display:grid;place-items:center;font-style:normal;font-size:15px;background:#0B1016;color:var(--faint);flex:none}
+.cb-t{display:flex;flex-direction:column;line-height:1.25}
+.cb-t b{font-size:13px;white-space:nowrap}
+.cb-t small{font-family:var(--f-type);font-size:11px;color:var(--muted);white-space:nowrap}
+.cb-clue.locked{border-style:dashed}
+.cb-clue.locked b{color:var(--muted)}
+.cb-clue.open{border-color:#4A3E24}
+.cb-clue.open .cb-ico{color:var(--tent);background:#16130B;font-family:var(--f-type)}
+.cb-clue.fresh{animation:fresh 1.6s ease-out 2}
+.cb-photo.hot{border-color:#5A3A24;box-shadow:0 0 18px -6px rgba(224,96,63,.6)}
+.cb-btn{padding:4px 14px}
+.cb-btn .cb-t{align-items:center}
+.more-list{display:flex;flex-direction:column;gap:8px}
+.more-list .btn{justify-content:center;min-height:44px}
+.rank-sheet .board-rank{max-height:50vh;overflow:auto}
+@media (max-width:560px){
+  .cb-item{min-height:44px;padding:3px 10px 3px 3px;gap:6px}
+  .cb-item img{width:44px;height:34px}
+  .cb-ico{width:34px;height:34px}
+  .case-bar{padding-bottom:8px}
+}
+@media (max-width:560px){.talk-fab{padding:6px 12px;font-size:13px}}

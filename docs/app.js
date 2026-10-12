@@ -107,7 +107,6 @@ const S = {
   pins: new Set(lsGet('soup.pins', []) || []), reveal: new Map(),
   arc: { f: 'all', q: '', sort: 'no', ...(lsGet('soup.arc', {}) || {}) },
   watch: null,  // 경쟁전에서 내 기록이 끝난 뒤 지켜보는 다른 수사관
-  mtab: null, logSeen: {}   // 좁은 화면의 사건/기록 탭, 탭별로 읽은 기록 수
 };
 const narrow = () => matchMedia('(max-width:900px)').matches;
 const playing = () => S.play;
@@ -518,7 +517,7 @@ function guessSheet() {
     h('p', { class: 'v-round' }, final ? 'FINAL ANSWER · 최종 답안' : 'SUBMIT THE TRUTH · 진상 제출'),
     h('h3', null, final ? '마지막 추리를 적어 주세요' : '무슨 일이 있었는지 적어 주세요'),
     h('p', null, `처음부터 끝까지 이어지게 설명해 주세요. 키워드 ${d.need}개를 인과관계까지 담아야 해결돼요. `
-      + (final ? `질문이 끝나서 이번이 마지막 기회예요. 틀리면 +${FAIL}문으로 사건이 끝나요.` : `틀리면 +${WRONG}문이고, 맞힌 키워드는 ${playing() === 'versus' ? '나에게' : '방 전체에'} 열려요.`)),
+      + (final ? `질문이 끝나서 이번이 마지막 기회예요. 틀리면 +${FAIL}문으로 사건이 끝나요.` : `틀리면 +${WRONG}문이고, 키워드를 몇 개 맞혔는지만 알려 줘요.`)),
     ta = h('textarea', { class: 'field', rows: 7, maxlength: 1200, placeholder: '예) 그 사람은 사실 …였다. 그래서 …했고, 그 때문에 …', oninput: keep }),
     h('div', { class: 'row' },
       h('button', { class: 'btn', type: 'button', onclick: () => { keep(); close(); } }, '닫기'),
@@ -609,10 +608,47 @@ async function copy(text, btn) {
   try { await navigator.clipboard.writeText(text); if (btn) btn.textContent = '복사했어요'; }
   catch { const el = $('#inviteLink'); if (el) { el.focus(); el.select(); } if (btn) btn.textContent = '선택해 두었어요. 복사해 주세요'; }
 }
+// 잠긴 단서: 다음 차례면 긴급 열람을 묻고, 아니면 언제 열리는지 알려 준다
+function lockedClue(c) {
+  const d = dOf(S.caseId);
+  if (d.nextClue === c && !d.over && !watching()) return buyClue();
+  sheet(`단서 #${c.i + 1}은 ${c.at}문에 열려요`, `지금 ${d.n}문이에요. 긴급 열람은 앞 단서부터 차례로 할 수 있어요.`, '확인', () => {});
+}
+// 더보기: 질문 끝내기 · 포기 · 식탁 치우기
+function moreSheet(pid) {
+  const d = dOf(pid), kind = playing();
+  let first;
+  sheetShell('더보기', close => h('div', { class: 'sheet more-sheet', role: 'dialog', 'aria-modal': 'true' },
+    h('h3', null, '수사 정리'),
+    h('div', { class: 'more-list' },
+      !d.over && !d.capped ? h('button', { class: 'btn', type: 'button', onclick: () => { close(); endQuestions(); } }, '질문 끝내기 · 최종 추리로') : null,
+      !d.over ? h('button', { class: 'btn ghost warn', type: 'button', onclick: () => { close(); giveUp(); } }, `포기하고 진상 보기 · +${FAIL}문`) : null,
+      d.L.length && (kind === 'versus' || S.host === me) ? h('button', { class: 'btn ghost', type: 'button', onclick: () => { close(); clearCase(); } }, '식탁 치우기 · 이 사건 기록 지우기') : null,
+      first = h('button', { class: 'btn', type: 'button', onclick: close }, '닫기'))));
+  first.focus();
+}
+// 따로 풀기 점수판 (내 기록이 끝나면 다른 수사관을 지켜볼 수 있다)
+function rankSheet(pid) {
+  const ranks = rankFor(pid);
+  const myOver = !!derive(P[pid], index().logs.get(pid + '|' + me) || []).over;
+  let first;
+  sheetShell('따로 풀기 점수판', close => h('div', { class: 'sheet rank-sheet', role: 'dialog', 'aria-modal': 'true' },
+    h('h3', null, '따로 풀기 점수판'),
+    h('p', null, myOver ? '내 기록이 끝나서 다른 수사관의 수사를 지켜볼 수 있어요.' : '문수가 적을수록 위예요. 내 사건이 끝나면 다른 수사관의 기록을 지켜볼 수 있어요.'),
+    ranks.length ? h('div', { class: 'board-rank' }, ranks.map((r, i) => h('div', { class: 'rank-row' + (r.uid === me ? ' me' : '') + (myOver ? ' can-watch' : '') + (S.watch === r.uid ? ' watched' : '') },
+      h('span', { class: 'r' }, i + 1), h('img', { src: who(r.uid).av, alt: '' }), h('span', { class: 'nm', text: r.uid === me ? `${who(r.uid).name} (나)` : who(r.uid).name }),
+      h('span', { class: 'sc' }, r.st === 'solved' ? `${r.n}문 해결` : r.st === 'play' ? `${r.n}문 · 키워드 ${r.k}` : `${r.n}문 · 실패`),
+      myOver ? (r.uid === me
+        ? (watching() ? h('button', { class: 'flag', type: 'button', onclick: () => { close(); S.watch = null; render(); } }, '내 기록') : h('span'))
+        : h('button', { class: 'flag' + (S.watch === r.uid ? ' on' : ''), type: 'button', onclick: () => { close(); S.watch = S.watch === r.uid ? null : r.uid; render(); $('#deskScroll').scrollTop = 0; } }, S.watch === r.uid ? '관전 중' : '지켜보기')) : null)))
+      : h('p', { class: 'count' }, '아직 도전한 사람이 없어요. 첫 질문을 하면 점수판에 올라가요.'),
+    h('div', { class: 'row' }, first = h('button', { class: 'btn', type: 'button', onclick: close }, '닫기'))));
+  first.focus();
+}
 function openClue(c, text) {
   let closeBtn;
   sheetShell('단서 사진', close => h('div', { class: 'zoom-sheet', role: 'dialog', 'aria-modal': 'true' },
-    h('div', { class: 'plate clue-plate' }, h('img', { class: 'photo', src: c.img, alt: text || '단서 사진' })),
+    c.img ? h('div', { class: 'plate clue-plate' }, h('img', { class: 'photo', src: c.img, alt: text || '단서 사진' })) : null,
     h('div', { class: 'bar2' }, h('span', null, h('b', null, '단서 #' + (c.i + 1)), ' — ', text || ''), closeBtn = h('button', { type: 'button', onclick: close }, '닫기'))));
   closeBtn.focus();
 }
@@ -757,16 +793,7 @@ function renderTable() {
   $('#tTitle').textContent = p.title;
   for (const b of $('#playSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.play === kind));
 
-  // 좁은 화면: 문제·심문 / 사진·단서 탭 (문제와 키워드가 메인이라 처음엔 문제·심문)
-  const tab = S.mtab || 'log';
-  const seenK = pid + '|' + scopeOf(kind);
-  if (S.logSeen[seenK] == null || tab === 'log') S.logSeen[seenK] = d.L.length;
-  const unread = tab === 'case' ? d.L.length - S.logSeen[seenK] : 0;
-  const grid = $('#tableGrid');
-  grid.dataset.mtab = tab;
-  grid.classList.toggle('over', !!d.over);
-  for (const b of $('#mtabs').querySelectorAll('button')) b.setAttribute('aria-selected', String(b.dataset.mtab === tab));
-  $('#mtabBadge').textContent = unread > 0 ? `+${unread}` : '';
+  $('#tableGrid').classList.toggle('over', !!d.over);
   const look = watching();
   const myOver = kind === 'versus' && !!derive(p, index().logs.get(pid + '|' + me) || []).over;
   const seenKey = pid + ':' + kind;
@@ -812,41 +839,27 @@ function renderTable() {
     here.length ? h('div', { class: 'here' }, h('span', { class: 'faces' }, here.slice(0, 6).map(x => h('img', { src: who(x.id).av, alt: '' }))),
       `${here.slice(0, 3).map(x => who(x.id).name).join(', ')}${here.length > 3 ? ` 외 ${here.length - 3}명` : ''}이 보고 있어요`) : null));
 
-  // 단서판
-  const { plate, cap } = plateEl(pid, rv, fresh, false);
-  if (heat >= 45) plate.append(h('div', { class: 'steam', 'aria-hidden': 'true', style: `--so:${heat >= 88 ? 0.9 : heat >= 68 ? 0.6 : 0.32}` }, h('i'), h('i'), h('i')));
+  // 증거 줄: 현장 사진 · 단서 #1~3 · 점수판 · 더보기 — 한 줄, 누르면 팝업
   const clueOf = i => (rv.clues || []).find(c => c.i === i);
-  const clueCards = d.clues.map(c => {
-    if (c.open) {
-      const got = clueOf(c.i);
-      const where = got?.img ? '단서 사진' : '단서 메모';
-      return h('div', { class: 'card clue' + (fresh.has(c.id) ? ' fresh' : '') }, h('span', { class: 'n' }, '#' + (c.i + 1)),
-        h('div', { class: 'clue-body' },
-          got?.img ? h('button', { class: 'clue-img', type: 'button', 'aria-label': '단서 사진 크게 보기', onclick: () => openClue(got, got.text) }, h('img', { src: got.img, alt: '', loading: 'lazy' })) : null,
-          h('p', null, got?.text || h('span', { class: 'dots' }, '단서를 펼치는 중'))),
-        h('small', null, c.bought ? `긴급 열람 (+${BUY}문) · ${where}` : `${c.at}문 단서 · ${where}`));
-    }
-    const isNext = d.nextClue === c;
-    return h('div', { class: 'card locked' }, h('span', { class: 'n' }, '#' + (c.i + 1)), h('p', null, `${c.at}문에 열려요`),
-      isNext && !d.over && !look ? h('div', { class: 'act' }, h('button', { class: 'btn small', type: 'button', disabled: S.busy, onclick: buyClue }, `긴급 열람 · +${BUY}문`)) : null);
-  });
-  if (rv.clues?.length || Object.keys(rv.facts || {}).length) fresh.forEach(x => seenOpen.add(x));
   const ranks = kind === 'versus' ? rankFor(pid) : [];
-  put($('#board'),
-    h('figure', { class: 'print' }, plate, h('figcaption', null, cap)),
-    h('section', { class: 'panel' }, h('h3', null, h('span', null, h('i', { class: 'en' }, 'EVIDENCE'), '단서'), h('span', null, `${d.clues.filter(c => c.open).length}/${d.clues.length}`)), h('div', { class: 'stack' }, clueCards)),
-    kind === 'versus' ? h('section', { class: 'panel' }, h('h3', null, h('span', null, h('i', { class: 'en' }, 'RIVALS'), '따로 풀기 점수판'), h('span', null, '적을수록 위')),
-      ranks.length ? h('div', { class: 'board-rank' }, ranks.map((r, i) => h('div', { class: 'rank-row' + (r.uid === me ? ' me' : '') + (myOver ? ' can-watch' : '') + (S.watch === r.uid ? ' watched' : '') },
-        h('span', { class: 'r' }, i + 1), h('img', { src: who(r.uid).av, alt: '' }), h('span', { class: 'nm', text: r.uid === me ? `${who(r.uid).name} (나)` : who(r.uid).name }),
-        h('span', { class: 'sc' }, r.st === 'solved' ? `${r.n}문 해결` : r.st === 'play' ? `${r.n}문 · 키워드 ${r.k}` : `${r.n}문 · 실패`),
-        myOver ? (r.uid === me
-          ? (look ? h('button', { class: 'flag', type: 'button', onclick: () => { S.watch = null; render(); } }, '내 기록') : h('span'))
-          : h('button', { class: 'flag' + (S.watch === r.uid ? ' on' : ''), type: 'button', 'aria-pressed': String(S.watch === r.uid), onclick: () => { S.watch = S.watch === r.uid ? null : r.uid; S.mtab = 'log'; render(); $('#deskScroll').scrollTop = 0; } }, S.watch === r.uid ? '관전 중' : '지켜보기')) : null)))
-        : h('p', { class: 'count' }, '아직 이 사건에 도전한 사람이 없어요. 첫 질문을 하면 점수판에 올라가요.')) : null,
-    look ? null : h('div', { class: 'row' },
-      !d.over && !d.capped ? h('button', { class: 'btn', type: 'button', disabled: S.busy, onclick: endQuestions }, '질문 끝내기 · 최종 추리') : null,
-      !d.over ? h('button', { class: 'btn ghost warn', type: 'button', disabled: S.busy, onclick: giveUp }, `포기하고 진상 보기 · +${FAIL}문`) : null,
-      d.L.length && (kind === 'versus' || S.host === me) ? h('button', { class: 'btn ghost', type: 'button', onclick: clearCase }, '식탁 치우기') : null));
+  const clueBtns = d.clues.map(c => {
+    const got = clueOf(c.i);
+    return h('button', { class: 'cb-item cb-clue' + (c.open ? ' open' : ' locked') + (fresh.has(c.id) ? ' fresh' : ''), type: 'button',
+      'aria-label': c.open ? `단서 #${c.i + 1} 보기` : `단서 #${c.i + 1} · ${c.at}문에 열려요`,
+      onclick: () => (c.open ? openClue(got || { i: c.i }, got?.text) : lockedClue(c)) },
+      c.open && got?.img ? h('img', { src: got.img, alt: '', loading: 'lazy' }) : h('i', { class: 'cb-ico', 'aria-hidden': 'true' }, c.open ? '!' : '🔒'),
+      h('span', { class: 'cb-t' }, h('b', null, `단서 #${c.i + 1}`), h('small', null, c.open ? (c.bought ? '긴급 열람' : '열림') : `${c.at}문에 열림`)));
+  });
+  put($('#caseBar'),
+    h('button', { class: 'cb-item cb-photo' + (heat >= 68 ? ' hot' : ''), type: 'button', onclick: openZoom, 'aria-label': '현장 사진과 메모 보기' },
+      p.photo ? h('img', { src: p.photo, alt: '' }) : null,
+      h('span', { class: 'cb-t' }, h('b', null, '현장 사진'), h('small', null, `메모 ${(p.spots || []).length}개`))),
+    clueBtns,
+    kind === 'versus' ? h('button', { class: 'cb-item cb-btn', type: 'button', onclick: () => rankSheet(pid) },
+      h('span', { class: 'cb-t' }, h('b', null, '점수판'), h('small', null, `${ranks.length}명`))) : null,
+    look ? null : h('button', { class: 'cb-item cb-btn', type: 'button', 'aria-label': '더보기: 질문 끝내기 · 포기 · 식탁 치우기', onclick: () => moreSheet(pid) },
+      h('span', { class: 'cb-t' }, h('b', null, '⋯'), h('small', null, '더보기'))));
+  if (rv.clues?.length || Object.keys(rv.facts || {}).length) fresh.forEach(x => seenOpen.add(x));
 
   put($('#botBanner'), d.over ? null : botBanner());
 
@@ -888,8 +901,7 @@ function renderTable() {
   put($('#log'), items);
   if (S.loaded && !L.length) {
     put($('#logEmpty'), h('div', { class: 'empty' },
-      h('p', null, '아직 아무도 묻지 않았어요. 처음엔 이야기의 빈칸을 넓게 훑는 질문이 좋아요.'),
-      h('div', { class: 'starter' }, (p.starters || []).map(q => h('button', { type: 'button', onclick: () => { $('#draft').value = q; $('#draft').focus(); } }, q)))));
+      h('p', null, '아직 아무도 묻지 않았어요. 네 · 아니오로 답할 수 있는 질문으로 시작해 보세요.')));
   } else put($('#logEmpty'));
 
   syncComposer(d);
@@ -1256,7 +1268,7 @@ function modeSheet(pid) {
   first.focus();
 }
 function enterCase(pid) {
-  S.view = 'table'; S.caseId = pid; S.spot = null; S.err = ''; S.filter = 'all'; S.watch = null; S.mtab = null; S.briefOpen = false; S.talkOpen = false; S.resultOpen = false;
+  S.view = 'table'; S.caseId = pid; S.spot = null; S.err = ''; S.filter = 'all'; S.watch = null; S.briefOpen = false; S.talkOpen = false; S.resultOpen = false;
   setHash(); track(); render(); window.scrollTo({ top: 0 });
 }
 function goHome() {
@@ -1269,11 +1281,6 @@ function start() {
   $('#brand').addEventListener('click', goHome);
   $('#backBtn').addEventListener('click', goHome);
   $('#nameChip').addEventListener('click', nameSheet);
-  $('#mtabs').addEventListener('click', e => {
-    const b = e.target.closest('[data-mtab]'); if (!b || b.dataset.mtab === S.mtab) return;
-    S.mtab = b.dataset.mtab; render();
-    if (S.mtab === 'log') requestAnimationFrame(() => { const box = $('#deskScroll'); box.scrollTop = box.scrollHeight; });
-  });
   const qIn = $('#arcSearch'), sortIn = $('#arcSort');
   qIn.value = S.arc.q; sortIn.value = S.arc.sort;
   qIn.addEventListener('input', () => { S.arc.q = qIn.value; saveArc(); renderHome(); });

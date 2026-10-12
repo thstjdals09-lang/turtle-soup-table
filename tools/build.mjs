@@ -7,12 +7,11 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PUZZLES } from '../private/puzzles.mjs';
-import { MORE } from '../private/puzzles-more.mjs';
+import { loadPuzzles } from './puzzle-data.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const squash = s => s.replace(/\s*\n\s*/g, '');
-const ALL = [...PUZZLES, ...MORE];
+const ALL = loadPuzzles(root);   // private/rewrite/<id>.json 고쳐 쓴 값이 있으면 덮어 쓴다
 const assetsPath = join(root, 'private/art/assets.json');
 const assets = existsSync(assetsPath) ? JSON.parse(readFileSync(assetsPath, 'utf8')) : {};
 
@@ -25,7 +24,7 @@ for (const p of ALL) {
   if (p.secret.facts.filter(f => f.need).length < 3) throw new Error(p.id + ' 필수 키워드 3개 미만');
 }
 
-const pub = ALL.map(({ secret, art, ...p }) => {
+const pub = ALL.map(({ secret, art, starters, rewritten, ...p }) => {
   const photo = existsSync(join(root, 'docs/img', p.id + '.jpg')) ? `img/${p.id}.jpg` : undefined;
   return {
     ...p,
