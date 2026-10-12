@@ -99,6 +99,7 @@ async function api(action, body = {}) {
 const S = {
   view: 'home', caseId: null, filter: 'all',
   talkOpen: false, talkSeen: {}, talkJump: false, guessDraft: '', briefOpen: false,
+  resultOpen: false, resultSeen: new Set(),   // 정답이 나오면 결과 페이지를 한 번 자동으로 띄운다
   play: lsGet('soup.play', 'coop') === 'versus' ? 'versus' : 'coop',
   room: null, host: null, channel: null, conn: 'off', judge: null, botSeen: 0,
   events: new Map(), loaded: false, peers: [], typing: null, lastTrack: '',
@@ -636,6 +637,7 @@ function render() {
   renderTop();
   if (S.view === 'home') renderHome(); else renderTable();
   renderTalk();
+  renderResult();
 }
 function renderTop() {
   const chip = $('#roomChip');
@@ -852,7 +854,15 @@ function renderTable() {
   const watchBar = look ? h('div', { class: 'watch-bar' },
     h('span', null, h('i', { class: 'en' }, 'SPECTATING'), `${who(S.watch).name} 수사관의 기록을 관전 중이에요`),
     h('button', { class: 'btn small', type: 'button', onclick: () => { S.watch = null; render(); } }, '내 기록으로')) : null;
-  put($('#verdictArea'), watchBar, d.over ? verdictEl(pid, d, rv, kind, look) : null);
+  const rk = pid + '|' + scopeOf(kind);
+  if (d.over && S.loaded && !look && !S.resultSeen.has(rk)) { S.resultSeen.add(rk); S.resultOpen = true; }
+  const overBar = d.over ? h('div', { class: 'over-bar' + (d.over === 'solved' ? '' : ' cold') },
+    h('span', null, h('i', { class: 'en' }, d.over === 'solved' ? 'CASE CLOSED' : 'COLD CASE'),
+      d.over === 'solved' ? `사건 종결 · ${grade(d)} · ${d.total}문` : `미제 처리 · ${d.total}문`),
+    h('button', { class: 'btn primary small', type: 'button', onclick: () => { S.resultOpen = true; render(); } }, '결과 · 해설 보기')) : null;
+  // 끝난 사건은 문제 카드 자리에 결과 띠를 고정해 둔다
+  if (overBar) put($('#soupArea'), overBar);
+  put($('#verdictArea'), watchBar);
 
   // 기록 (의논은 따로 의논 창에서)
   const F = S.filter === 'chat' ? 'all' : S.filter;
@@ -989,6 +999,14 @@ function verdictEl(pid, d, rv, kind, look) {
       h('button', { class: 'btn', type: 'button', onclick: e => copy(shareText(pid, d), e.currentTarget) }, '결과 공유'),
       next ? h('button', { class: 'btn primary', type: 'button', onclick: () => openCase(next.id) }, '다음 사건 →') : null));
 
+  const GRADES = [['S', '한 숟갈', '15문 이하', '명탐정'], ['A', '한 그릇', '16~25문', '베테랑 수사관'], ['B', '두 그릇', '26~35문', '수사관'], ['C', '냄비째', '36~50문', '신참 형사'], ['D', '솥째', '51문 이상', '견습 형사'], ['F', '식은 수프', '포기 · 최종 실패', '미제 담당']];
+  const myG = grade(d);
+  const whose = versus ? (look ? `${who(S.watch).name}의 등급` : '내 등급') : '팀 등급';
+  const ladder = h('section', { class: 'v-sec' },
+    h('p', { class: 'v-lbl' }, h('span', null, '등급 해설'), h('span', null, `${whose} · ${myG}`)),
+    h('div', { class: 'ladder' }, GRADES.map(([g, n, r, t]) => h('div', { class: 'rung ' + gClass(g) + (n === myG ? ' on' : '') },
+      h('b', null, g), h('span', { class: 'rn' }, n), h('span', { class: 'rr' }, r), h('span', { class: 'rt' }, t)))),
+    h('p', { class: 'crit-note' }, `최종 문수 = 질문 수 + 긴급 단서 ${BUY} + 오답 ${WRONG} + 포기·최종 실패 ${FAIL} − 보너스 키워드 ${BONUS}. 적을수록 높은 등급이에요. ${solved ? `이번 기록은 ${d.total}문이라 「${myG}」이에요.` : ''}`));
   const vault = h('details', { class: 'vault', open: S.vault ? true : null, ontoggle: e => { S.vault = e.currentTarget.open; } },
     h('summary', null, h('span', { class: 'v-lbl' }, '단서 보관함'), h('b', null, `${d.clues.length}개`),
       unseen.length ? h('span', { class: 'tag found' }, `미공개 ${unseen.length}개 해금`) : null, h('span', { class: 'v-open' }, '펼쳐 보기')),
@@ -1046,7 +1064,7 @@ function verdictEl(pid, d, rv, kind, look) {
     h('div', { class: 'row' }, [['easy', '쉬움'], ['ok', '적당'], ['hard', '어려움']].map(([v, t]) =>
       h('button', { class: 'chip', type: 'button', 'aria-pressed': String(mine === v), onclick: () => react('rate', { value: v }) }, t, cnt(v) ? h('b', null, ` ${cnt(v)}`) : null))));
 
-  return h('section', { class: 'verdict ' + (solved ? 'v-solved' : 'v-cold') }, head, board, actions, truth, hl, trailSec, table, rate,
+  return h('section', { class: 'verdict ' + (solved ? 'v-solved' : 'v-cold') }, head, board, actions, ladder, truth, hl, trailSec, table, rate,
     versus && !look ? h('p', { class: 'v-watch' }, '관전 모드 · 내 기록은 동결됐어요. 점수판의 지켜보기로 다른 수사관의 수사를 볼 수 있어요.') : null);
 }
 
@@ -1151,6 +1169,30 @@ function toggleTalk(open = !S.talkOpen) {
   if (open) $('#talkInput').focus();
 }
 
+/* ---------- 결과 페이지 (등수 · 등급 해설 · 진상 해설) ---------- */
+function renderResult() {
+  const box = $('#result');
+  const pid = S.caseId;
+  const kind = playing();
+  const d = pid && S.view === 'table' && S.resultOpen ? dOf(pid, kind) : null;
+  if (!d?.over) {
+    if (S.resultOpen && d && !d.over) S.resultOpen = false;
+    if (!box.hidden) { box.hidden = true; box.replaceChildren(); }
+    return;
+  }
+  const rv = revealOf(pid, kind, d);
+  const keep = box.querySelector('.result-scroll')?.scrollTop || 0;
+  put(box,
+    h('div', { class: 'result-top' },
+      h('button', { class: 'back', type: 'button', onclick: closeResult }, '←', h('span', null, ' 심문 기록 보기')),
+      h('span', { class: 'rt' }, h('i', { class: 'en' }, 'CASE REPORT'), P[pid].title),
+      h('button', { class: 'talk-x', type: 'button', 'aria-label': '결과 닫기', onclick: closeResult }, '✕')),
+    h('div', { class: 'result-scroll' }, h('div', { class: 'result-in' }, verdictEl(pid, d, rv, kind, watching()))));
+  box.hidden = false;
+  box.querySelector('.result-scroll').scrollTop = keep;
+}
+function closeResult() { S.resultOpen = false; render(); }
+
 /* ---------- 새 버전 알림 ---------- */
 const VERSION_FILES = ['app.js', 'style.css', 'puzzles.js', 'index.html'];
 let versionSig = null;
@@ -1214,7 +1256,7 @@ function modeSheet(pid) {
   first.focus();
 }
 function enterCase(pid) {
-  S.view = 'table'; S.caseId = pid; S.spot = null; S.err = ''; S.filter = 'all'; S.watch = null; S.mtab = null; S.briefOpen = false; S.talkOpen = false;
+  S.view = 'table'; S.caseId = pid; S.spot = null; S.err = ''; S.filter = 'all'; S.watch = null; S.mtab = null; S.briefOpen = false; S.talkOpen = false; S.resultOpen = false;
   setHash(); track(); render(); window.scrollTo({ top: 0 });
 }
 function goHome() {
@@ -1248,6 +1290,7 @@ function start() {
   tk.addEventListener('input', () => { if (tk.value.trim()) setTyping(true); });
   tk.addEventListener('keydown', e => { if (e.key === 'Escape') toggleTalk(false); });
   watchUpdates();
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.resultOpen && !$('#sheetRoot').childElementCount) closeResult(); });
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submitDraft(); } });
   setInterval(() => { if (S.view === 'table' && !$('#sheetRoot').childElementCount) render(); }, 30000);
   setInterval(() => { if (S.room) pollBot(); }, 20000);
