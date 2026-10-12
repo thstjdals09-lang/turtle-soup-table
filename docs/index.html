@@ -84,7 +84,11 @@
       </div>
       <div class="meter" id="meter"></div>
     </div>
-    <div class="table-grid">
+    <div class="mtabs" id="mtabs" role="tablist" aria-label="사건 화면 나누기">
+      <button type="button" role="tab" data-mtab="case" aria-selected="false">사건 · 증거</button>
+      <button type="button" role="tab" data-mtab="log" aria-selected="true">심문 기록 <span class="badge" id="mtabBadge"></span></button>
+    </div>
+    <div class="table-grid" id="tableGrid">
       <div class="soup" id="soupArea"></div>
       <aside class="board" id="board"></aside>
       <div class="desk">

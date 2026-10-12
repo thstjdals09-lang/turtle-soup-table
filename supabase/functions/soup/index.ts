@@ -60,6 +60,8 @@ async function handle(b: Row) {
     case "appeal": return appeal(b);
     case "clue": case "end": case "giveup": return simple(b);
     case "chat": return chat(b);
+    case "like": return like(b);
+    case "rate": return rate(b);
     case "reveal": return reveal(b);
     case "clear": return clear(b);
     case "seed": return seed(b);
@@ -350,6 +352,36 @@ async function chat(b: Row) {
   const text = str(b.text, 300);
   if (!text) throw new Fail("empty");
   return { id: await insert({ room: r.code, puzzle: c.pid, scope: "coop", player: c.player, name: c.name, kind: "chat", body: text }) };
+}
+
+/* ---------- 끝난 뒤의 반응 ---------- */
+// 질문 추천: 한 사람이 한 질문에 한 번, 다시 누르면 취소
+async function like(b: Row) {
+  const { player, name } = who(b);
+  const r = await room(b.code);
+  const t = await eventById(b.id, r.code);
+  if (t.kind !== "q" || t.status !== "done" || t.answer === "반려") throw new Fail("bad_target");
+  const { data: mine, error } = await db.from("soup_events").select("id")
+    .eq("room", r.code).eq("puzzle", t.puzzle).eq("kind", "like").eq("player", player).eq("body", String(t.id)).limit(1);
+  if (error) throw error;
+  if (mine?.length) {
+    const { error: e2 } = await db.from("soup_events").delete().eq("id", mine[0].id);
+    if (e2) throw e2;
+    return { on: false };
+  }
+  await insert({ room: r.code, puzzle: t.puzzle, scope: t.scope, player, name, kind: "like", body: String(t.id) });
+  return { on: true };
+}
+// 체감 난이도: 사건마다 한 사람에 하나, 바꾸면 새로 적는다
+async function rate(b: Row) {
+  const { player, name } = who(b);
+  const r = await room(b.code);
+  const pid = str(b.puzzle, 40);
+  await puzzleOf(pid);
+  if (!["easy", "ok", "hard"].includes(b.value)) throw new Fail("bad_rate");
+  const { error } = await db.from("soup_events").delete().eq("room", r.code).eq("puzzle", pid).eq("kind", "rate").eq("player", player);
+  if (error) throw error;
+  return { id: await insert({ room: r.code, puzzle: pid, scope: "coop", player, name, kind: "rate", body: b.value }) };
 }
 
 /* ---------- 공개된 것 ---------- */
