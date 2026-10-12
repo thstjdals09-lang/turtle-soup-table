@@ -106,7 +106,7 @@ async function tick() {
     const rows = await rest('soup_events?or=(status.eq.pending,appeal.eq.pending)&order=id.asc&limit=20&select=*');
     for (const e of rows) {
       if (busy.size >= PARALLEL) break;
-      if (busy.has(e.id) || !['q', 'guess'].includes(e.kind)) continue;
+      if (busy.has(e.id) || !['q', 'guess'].includes(e.kind) || e.note === 'proposal') continue;
       if (serverMode !== 'bot' && !e.err && Date.now() - Date.parse(e.updated_at) < 30000) continue;
       busy.add(e.id);
       handle(e).finally(() => busy.delete(e.id));

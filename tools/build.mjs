@@ -12,6 +12,8 @@ import { loadPuzzles } from './puzzle-data.mjs';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const squash = s => s.replace(/\s*\n\s*/g, '');
 const ALL = loadPuzzles(root);   // private/rewrite/<id>.json 고쳐 쓴 값이 있으면 덮어 쓴다
+// 짧은 사건(35문 · 단서 10/20/30): 원본에 short 가 있으면 그 값, 없으면 별 하나 사건
+const shortOf = p => p.short ?? p.level === 1;
 const assetsPath = join(root, 'private/art/assets.json');
 const assets = existsSync(assetsPath) ? JSON.parse(readFileSync(assetsPath, 'utf8')) : {};
 
@@ -33,7 +35,8 @@ const pub = ALL.map(({ secret, art, starters, rewritten, tags, ...p }) => {   //
     scene: p.scene ? squash(p.scene) : undefined,
     photo,
     facts: secret.facts.map(f => ({ id: f.id, need: f.need })),
-    clues: secret.clues.length
+    clues: secret.clues.length,
+    short: shortOf(p) || undefined
   };
 });
 const pubJs = '// 자동 생성 파일 — tools/build.mjs 가 private/ 원본에서 만든다. 직접 고치지 말 것.\n'
@@ -42,7 +45,7 @@ writeFileSync(join(root, 'docs/puzzles.js'), pubJs);
 for (const f of ['rules.js', 'judge.js']) writeFileSync(join(root, 'supabase/functions/soup', f), readFileSync(join(root, 'docs', f), 'utf8'));
 
 const seed = Object.fromEntries(ALL.map(p => [p.id, {
-  title: p.title, story: p.story, sceneNote: p.sceneNote,
+  title: p.title, story: p.story, sceneNote: p.sceneNote, short: shortOf(p) || undefined,
   spots: p.spots.map(({ label, text }) => ({ label, text })),
   truth: p.secret.truth, facts: p.secret.facts, canon: p.secret.canon,
   clues: p.secret.clues.map((c, i) => ({ ...c, img: assets[p.id]?.clues?.[i] || undefined })),

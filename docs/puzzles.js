@@ -106,7 +106,8 @@ export const PUZZLES = [
     "need": false
    }
   ],
-  "clues": 3
+  "clues": 3,
+  "short": true
  },
  {
   "id": "board-night",
@@ -156,7 +157,8 @@ export const PUZZLES = [
     "need": false
    }
   ],
-  "clues": 3
+  "clues": 3,
+  "short": true
  },
  {
   "id": "noodle-window",
@@ -590,7 +592,8 @@ export const PUZZLES = [
     "need": false
    }
   ],
-  "clues": 3
+  "clues": 3,
+  "short": true
  },
  {
   "id": "stage-gun",
@@ -980,7 +983,8 @@ export const PUZZLES = [
     "need": false
    }
   ],
-  "clues": 3
+  "clues": 3,
+  "short": true
  },
  {
   "id": "taxi-3am",
@@ -1029,7 +1033,8 @@ export const PUZZLES = [
     "need": false
    }
   ],
-  "clues": 3
+  "clues": 3,
+  "short": true
  },
  {
   "id": "runaway-bride",
@@ -1192,7 +1197,8 @@ export const PUZZLES = [
     "need": false
    }
   ],
-  "clues": 3
+  "clues": 3,
+  "short": true
  },
  {
   "id": "secret-hole-in-one",
@@ -1404,7 +1410,8 @@ export const PUZZLES = [
     "need": false
    }
   ],
-  "clues": 3
+  "clues": 3,
+  "short": true
  },
  {
   "id": "dry-shoes",
@@ -1506,7 +1513,8 @@ export const PUZZLES = [
     "need": false
    }
   ],
-  "clues": 3
+  "clues": 3,
+  "short": true
  },
  {
   "id": "acrostic",

@@ -3,7 +3,7 @@
 // 진상은 이 파일에 없다. s는 서버의 soup_secrets.data 또는 private/seed.json 의 한 문제.
 import { ANSWERS, NOTE_CODES } from './rules.js';
 
-export const metaOf = s => ({ facts: s.facts.map(f => ({ id: f.id, need: f.need })), clues: s.clues.length });
+export const metaOf = s => ({ facts: s.facts.map(f => ({ id: f.id, need: f.need })), clues: s.clues.length, short: !!s.short });
 
 function puzzleBlock(s) {
   return `[문제]

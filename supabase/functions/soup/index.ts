@@ -7,7 +7,7 @@
 // 선택 비밀 값: ANTHROPIC_API_KEY, SOUP_MODEL, SOUP_DAILY_LIMIT, GEMINI_API_KEY, GEMINI_MODELS
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { STALE_MS, derive } from "./rules.js";
+import { CALIB_MIN, STALE_MS, calibrate, derive, similarOf } from "./rules.js";
 import { cleanGrade, cleanJudge, cleanReview, gradeSchema, gradeSystem, gradeUser, judgeSchema, judgeSystem, judgeUser, metaOf, reviewSchema, reviewSystem, reviewUser } from "./judge.js";
 
 // deno-lint-ignore no-explicit-any
@@ -69,6 +69,10 @@ async function handle(b: Row) {
     case "custom_review": return customReview(b);
     case "custom_report": return customReport(b);
     case "custom_get": return customGet(b);
+    case "rules": return setRules(b);
+    case "skip": return skipTurn(b);
+    case "proposal": return decideProposal(b);
+    case "case_stats": return caseStats();
     case "reveal": return reveal(b);
     case "clear": return clear(b);
     case "seed": return seed(b);
@@ -85,7 +89,7 @@ async function puzzleOf(pid: string) {
   if (puzzles.has(pid)) return puzzles.get(pid)!;
   const { data, error } = await db.from("soup_secrets").select("data").eq("puzzle", pid).maybeSingle();
   if (error) throw error;
-  if (!data) throw new Fail("bad_puzzle");
+  if (!data || data.data?.stats) throw new Fail("bad_puzzle");
   const s = data.data as Row;
   s.meta = metaOf(s);
   puzzles.set(pid, s);
@@ -227,11 +231,20 @@ async function ask(b: Row) {
   const d = derive(c.s.meta, list);
   if (d.over) throw new Fail("over");
   if (d.capped) throw new Fail("capped");
+  myTurn(d, c.player);
   const pending = list.filter((e) => e.player === c.player && e.status === "pending" && Date.now() - Date.parse(e.updated_at) < STALE_MS);
   if (pending.length >= 3) throw new Fail("too_many");
+  const first = !list.some((e) => e.kind === "q");
+  // 이미 판정이 난 질문과 거의 같으면 AI에 묻지 않고 같은 판정을 돌려준다 (1문은 쓴다)
+  const same = similarOf(d.L, text);
+  if (same) {
+    const id = await insert({ room: r.code, puzzle: c.pid, scope: c.scope, player: c.player, name: c.name, kind: "q", body: text, status: "done", answer: same.answer, note: "cache", facts: [], hot: false });
+    if (first) await customBump(c.pid, "plays");
+    return { id, cached: same.id };
+  }
   await budget();
   const id = await insert({ room: r.code, puzzle: c.pid, scope: c.scope, player: c.player, name: c.name, kind: "q", body: text, status: "pending" });
-  if (!list.some((e) => e.kind === "q")) await customBump(c.pid, "plays");
+  if (first) await customBump(c.pid, "plays");
   await judgeLater(() => judgeAndSave(id, null));
   return { id };
 }
@@ -241,6 +254,7 @@ async function retry(b: Row) {
   const e = await eventById(b.id, r.code);
   const stale = e.status === "pending" && (Date.now() - Date.parse(e.updated_at) > STALE_MS || !!e.err);
   if (!(e.status === "error" || stale) || (e.kind !== "q" && e.kind !== "guess")) throw new Fail("not_retryable");
+  if (e.note === "proposal" || e.err === "rejected" || e.err === "withdrawn") throw new Fail("not_retryable");
   if (e.scope !== "coop" && e.scope !== player) throw new Fail("not_yours");
   await budget();
   await patch(e.id, { status: "pending", err: null });
@@ -270,7 +284,12 @@ async function saveGrade(e: Row, out: unknown) {
   const s = await puzzleOf(e.puzzle);
   const g = cleanGrade(s, out);
   await patchIfWaiting(e.id, { status: "done", ...g, err: null }, "status");
-  if (g.ok) await customBump(e.puzzle, "solves");
+  if (!g.ok) return;
+  try {
+    const d = derive(s.meta, await eventsOf(e.room, e.puzzle, e.scope));
+    await recordSolve(e.puzzle, d.total);
+    if (e.scope !== "coop") await giftClues(e, s);
+  } catch (err) { console.error("solve after:", err); }
 }
 async function patchIfWaiting(id: number, row: Row, field: string) {
   const { error } = await db.from("soup_events").update({ ...row, updated_at: now() }).eq("id", id).eq(field, "pending");
@@ -304,6 +323,13 @@ async function guess(b: Row) {
   const d = derive(c.s.meta, await eventsOf(r.code, c.pid, c.scope));
   if (d.over) throw new Fail("over");
   if (d.guessing) throw new Fail("guessing");
+  if (d.proposal) throw new Fail("proposal_open");
+  myTurn(d, c.player);
+  // 함께 풀기 · 방장 승인: 방장이 아닌 사람의 제출은 제안으로 남고, 방장이 승인해야 채점한다
+  if (c.scope === "coop" && d.rules.approve && r.host !== c.player) {
+    const id = await insert({ room: r.code, puzzle: c.pid, scope: c.scope, player: c.player, name: c.name, kind: "guess", body: text, status: "pending", note: "proposal", final: d.capped });
+    return { id, proposal: true };
+  }
   await budget();
   const id = await insert({ room: r.code, puzzle: c.pid, scope: c.scope, player: c.player, name: c.name, kind: "guess", body: text, status: "pending", final: d.capped });
   await judgeLater(() => gradeAndSave(id));
@@ -348,6 +374,7 @@ async function simple(b: Row) {
   const r = await room(b.code);
   const d = derive(c.s.meta, await eventsOf(r.code, c.pid, c.scope));
   if (d.over) throw new Fail("over");
+  if (c.scope === "coop" && (d.rules.turns || d.rules.approve) && r.host !== c.player) throw new Fail("host_only");
   const row: Row = { room: r.code, puzzle: c.pid, scope: c.scope, player: c.player, name: c.name, kind: b.action };
   if (b.action === "clue") {
     if (!d.nextClue) throw new Fail("no_clue");
@@ -362,6 +389,57 @@ async function chat(b: Row) {
   const text = str(b.text, 300);
   if (!text) throw new Fail("empty");
   return { id: await insert({ room: r.code, puzzle: c.pid, scope: "coop", player: c.player, name: c.name, kind: "chat", body: text }) };
+}
+
+/* ---------- 함께 풀기 규칙: 차례제 · 방장 승인 ---------- */
+// 차례제가 켜져 있으면 내 차례에만 질문 · 제출할 수 있다
+function myTurn(d: Row, player: string) {
+  if (!d.turn) return;
+  if (!d.rules.order.includes(player)) throw new Fail("not_in_order");
+  if (d.turn !== player) throw new Fail("not_your_turn");
+}
+async function hostCtx(b: Row) {
+  const c = await ctx({ ...b, scope: "coop" });
+  const r = await room(b.code);
+  if (r.host !== c.player) throw new Fail("not_host");
+  return { c, r };
+}
+// 규칙 바꾸기 (방장): 차례제 켜고 끄기, 방장 승인 켜고 끄기, 차례 순서
+async function setRules(b: Row) {
+  const { c, r } = await hostCtx(b);
+  const order = [...new Set((Array.isArray(b.order) ? b.order : []).map((x: unknown) => str(x, 64)).filter((x: string) => PLAYER_RE.test(x)))].slice(0, 12);
+  if (b.turns && !order.length) throw new Fail("bad_rules");
+  const body = JSON.stringify({ turns: !!b.turns, approve: !!b.approve, order: b.turns ? order : [] });
+  return { id: await insert({ room: r.code, puzzle: c.pid, scope: "coop", player: c.player, name: c.name, kind: "chat", note: "rules", body }) };
+}
+// 자리를 비운 사람의 차례 넘기기 (방장)
+async function skipTurn(b: Row) {
+  const { c, r } = await hostCtx(b);
+  const d = derive(c.s.meta, await eventsOf(r.code, c.pid, "coop"));
+  if (!d.turn) throw new Fail("no_turn");
+  return { id: await insert({ room: r.code, puzzle: c.pid, scope: "coop", player: c.player, name: c.name, kind: "chat", note: "skip", body: d.turn }) };
+}
+// 정답 제안: 방장이 승인하면 채점, 반려하면 끝. 제안한 사람은 거둘 수 있다
+async function decideProposal(b: Row) {
+  const { player } = who(b);
+  const r = await room(b.code);
+  const e = await eventById(b.id, r.code);
+  if (e.kind !== "guess" || e.note !== "proposal" || e.status !== "pending") throw new Fail("not_proposal");
+  const host = r.host === player;
+  if (b.ok) {
+    if (!host) throw new Fail("not_host");
+    const s = await puzzleOf(e.puzzle);
+    const d = derive(s.meta, await eventsOf(r.code, e.puzzle, e.scope));
+    if (d.over) throw new Fail("over");
+    if (d.guessing) throw new Fail("guessing");
+    await budget();
+    await patch(e.id, { note: "approved" });
+    await judgeLater(() => gradeAndSave(e.id));
+    return { ok: true };
+  }
+  if (!host && e.player !== player) throw new Fail("not_host");
+  await patch(e.id, { status: "error", err: host && e.player !== player ? "rejected" : "withdrawn" });
+  return { ok: false };
 }
 
 /* ---------- 끝난 뒤의 반응 ---------- */
@@ -413,6 +491,7 @@ function publicCard(id: string, s: Row, player = "") {
     my_rating: player ? s.ratings?.[player] || 0 : 0, my_judge: player ? s.judge?.[player] || 0 : 0,
     my_note: player ? s.notes?.[player]?.t || "" : "", my_report: player ? s.reports?.[player] || "" : "",
     created_at: s.created_at, updated_at: s.updated_at || "", rev: s.rev || 1,
+    short: !!s.short, cuts: calibrate(s.totals), calib_n: (s.totals || []).length,
     // 한 줄 후기와 신고 사유는 만든 사람에게만 (손질할 곳을 찾으라고)
     ...(mine ? {
       notes: Object.values(s.notes || {}).sort((a: Row, b: Row) => String(b.at).localeCompare(String(a.at))).slice(0, 50),
@@ -455,7 +534,7 @@ function readDraft(b: Row) {
   const tags = (Array.isArray(b.tags) ? b.tags : []).map((t: unknown) => str(t, 12)).filter(Boolean).slice(0, 4);
   // 판정 메모: 판정관만 보는 사실 정리 ("아닌 것", 헷갈리는 말의 뜻, 정답에 필요 없는 세부)
   const memo = str(b.memo, 800);
-  return { level, title, story, truth, facts, clues, canon, tags, memo };
+  return { level, title, story, truth, facts, clues, canon, tags, memo, short: !!b.short };
 }
 async function customRow(id: string) {
   if (!CUSTOM_RE.test(id)) throw new Fail("bad_puzzle");
@@ -515,7 +594,7 @@ async function customGet(b: Row) {
   if (s.author !== player) throw new Fail("not_yours");
   return {
     draft: {
-      title: s.title, level: s.level, story: s.story, truth: s.truth, memo: s.memo || "", canon: s.canon || [],
+      title: s.title, level: s.level, short: !!s.short, story: s.story, truth: s.truth, memo: s.memo || "", canon: s.canon || [],
       facts: (s.facts || []).map((f: Row) => ({ label: f.label, check: f.check === f.label ? "" : f.check, need: f.need })),
       clues: (s.clues || []).map((c: Row) => c.text || ""),
     },
@@ -569,6 +648,50 @@ async function customReport(b: Row) {
   if (s.status === "public" && Object.keys(reports).length >= REPORT_LIMIT) { s.status = "review"; s.review_at = now(); }
   await customSave(id, s);
   return { card: publicCard(id, s, player) };
+}
+// 해결한 판의 최종 문수를 모아 등급 기준을 맞춘다. 창작 사건은 data.totals, 기본 사건은 "stats-<id>" 행
+async function recordSolve(pid: string, total: number) {
+  if (CUSTOM_RE.test(pid)) {
+    const s = await customRow(pid);
+    s.solves = (s.solves || 0) + 1;
+    s.totals = [...(s.totals || []), total].slice(-300);
+    await customSave(pid, s);
+    return;
+  }
+  const key = "stats-" + pid;
+  const { data, error } = await db.from("soup_secrets").select("data").eq("puzzle", key).maybeSingle();
+  if (error) throw error;
+  const totals = [...((data?.data?.totals as number[]) || []), total].slice(-300);
+  const { error: e2 } = await db.from("soup_secrets").upsert({ puzzle: key, data: { stats: true, totals } });
+  if (e2) throw e2;
+}
+// 기본 사건의 맞춘 등급 기준 (풀이가 충분히 쌓인 것만)
+async function caseStats() {
+  const { data, error } = await db.from("soup_secrets").select("puzzle,data").like("puzzle", "stats-%").limit(500);
+  if (error) throw error;
+  const cuts: Row = {}, n: Row = {};
+  for (const r of data || []) {
+    const pid = String(r.puzzle).slice(6), t = (r.data?.totals as number[]) || [];
+    n[pid] = t.length;
+    const c = calibrate(t);
+    if (c) cuts[pid] = c;
+  }
+  return { cuts, n, min: CALIB_MIN };
+}
+// 따로 풀기: 이 사건을 방에서 처음 푼 사람이 나오면, 아직 푸는 다른 수사관에게 다음 단서를 한 장씩 열어 준다
+async function giftClues(e: Row, s: Row) {
+  const { data: rows, error } = await db.from("soup_events").select("*").eq("room", e.room).eq("puzzle", e.puzzle).neq("scope", "coop").order("id").limit(5000);
+  if (error) throw error;
+  const all = (rows || []) as Row[];
+  if (all.some((x) => x.kind === "guess" && x.ok && x.id !== e.id)) return;   // 이미 먼저 푼 사람이 있다
+  const by = new Map<string, Row[]>();
+  for (const x of all) { if (!by.has(x.scope)) by.set(x.scope, []); by.get(x.scope)!.push(x); }
+  for (const [scope, list] of by) {
+    if (scope === e.scope) continue;
+    const d = derive(s.meta, list);
+    if (d.over || !d.nextClue) continue;
+    await insert({ room: e.room, puzzle: e.puzzle, scope, player: e.player, name: e.name, kind: "clue", note: "gift", clue_i: d.nextClue.i });
+  }
 }
 // 플레이 수(그 방·그 범위에서 첫 질문) · 해결 수(첫 정답)
 async function customBump(id: string, what: "plays" | "solves") {
