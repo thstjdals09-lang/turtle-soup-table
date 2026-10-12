@@ -1,6 +1,6 @@
 // private/puzzles.mjs(진상까지 든 원본, 저장소에 올리지 않음)에서
 //  - docs/puzzles.js                  공개 데이터(문제, 삽화 바탕, 키워드 개수)
-//  - supabase/functions/soup/rules.js  화면과 같은 규칙 사본
+//  - supabase/functions/soup/          화면과 같은 규칙(rules.js)·출제 지시문(judge.js) 사본
 //  - private/seed.json                서버(soup_secrets)에 올릴 문제 전체 (저장소에 올리지 않음)
 // 을 만든다.  실행: node tools/build.mjs   올리기: node tools/seed.mjs
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -20,7 +20,7 @@ const pub = PUZZLES.map(({ secret, ...p }) => ({
 const pubJs = '// 자동 생성 파일 — tools/build.mjs 가 private/puzzles.mjs 에서 만든다. 직접 고치지 말 것.\n'
   + 'export const PUZZLES = ' + JSON.stringify(pub, null, 1) + ';\n';
 writeFileSync(join(root, 'docs/puzzles.js'), pubJs);
-writeFileSync(join(root, 'supabase/functions/soup/rules.js'), readFileSync(join(root, 'docs/rules.js'), 'utf8'));
+for (const f of ['rules.js', 'judge.js']) writeFileSync(join(root, 'supabase/functions/soup', f), readFileSync(join(root, 'docs', f), 'utf8'));
 
 const seed = Object.fromEntries(PUZZLES.map(p => [p.id, {
   title: p.title, story: p.story, sceneNote: p.sceneNote,

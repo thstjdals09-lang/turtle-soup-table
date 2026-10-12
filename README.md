@@ -21,14 +21,25 @@
 | `supabase/migrations/` | 표 정의: `soup_rooms`, `soup_events`(실시간), `soup_secrets`(진상, 화면에서 읽을 수 없음) |
 | `tools/build.mjs` | `private/puzzles.mjs`(진상이 든 원본, 저장소 밖)에서 `docs/puzzles.js`를 만든다 |
 | `tools/seed.mjs` | 진상·키워드·단서를 서버 함수를 거쳐 `soup_secrets`에 올린다 |
+| `tools/host-bot.mjs` | 방장 PC 출제자 봇: 대기 질문을 `claude -p`로 판정해 올린다 |
+| `docs/judge.js` | 출제자 지시문과 답 정리. 서버 함수와 봇이 함께 쓴다 |
 
 진상은 저장소에 없다. 화면은 공개된 문제와 삽화 바탕만 갖고, 키워드·단서·진상은 열릴 때마다 서버 함수가 내려준다.
+
+## 출제자 봇 (방장 PC)
+
+API 키 없이 방장의 Claude 구독으로 판정한다. 게임할 때 방장 PC에서 켜 두면 친구들이 남긴 질문을 가져가 `claude -p`로 판정하고 결과를 올린다.
+
+- `host-bot.bat` 더블클릭, 또는 `node tools/host-bot.mjs`
+- 필요한 것: 로그인된 Claude Code, `private/puzzles.mjs`·`private/admin-token.txt` (저장소에 없음)
+- 봇이 꺼져 있으면 화면에 "출제자 봇이 꺼져 있어요"가 뜨고, 질문은 대기로 남았다가 봇이 켜지면 차례로 답한다
+- 선택: `BOT_MODEL`(예: sonnet), `BOT_PARALLEL`(동시 판정 수, 기본 2)
+
+Supabase 함수에 `ANTHROPIC_API_KEY`를 넣으면 봇 없이 서버가 직접 판정한다 (`SOUP_MODEL` 기본 `claude-opus-5-5`, `SOUP_DAILY_LIMIT` 기본 2000).
 
 ## 운영
 
 ```bash
-node tools/build.mjs   # 문제를 고친 뒤 공개 파일 다시 만들기
+node tools/build.mjs   # 문제를 고친 뒤 공개 파일·함수 사본 다시 만들기
 node tools/seed.mjs    # 진상 데이터 서버에 올리기 (private/admin-token.txt 필요)
 ```
-
-서버 함수 비밀 값: `ANTHROPIC_API_KEY`(필수), `SOUP_MODEL`(기본 `claude-opus-5-5`), `SOUP_DAILY_LIMIT`(하루 AI 호출 한도, 기본 2000).

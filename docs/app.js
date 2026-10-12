@@ -72,6 +72,7 @@ const ERR = {
   guessing: '제출한 진상을 채점하는 중이에요. 잠시 기다려 주세요.',
   too_many: '답을 기다리는 질문이 세 개예요. 답이 오면 다시 물어 주세요.',
   not_host: '함께 풀기 기록은 방을 만든 사람만 지울 수 있어요.',
+  bot_failed: '출제자 봇이 판정하지 못했어요. 다시 묻기를 눌러 주세요.',
   no_clue: '더 열 단서가 없어요.',
   server: '출제자가 답을 정하지 못했어요. 다시 묻기를 눌러 주세요.'
 };
@@ -97,7 +98,7 @@ async function api(action, body = {}) {
 const S = {
   view: 'home', caseId: null, filter: 'all', compose: 'ask',
   play: lsGet('soup.play', 'coop') === 'versus' ? 'versus' : 'coop',
-  room: null, host: null, channel: null, conn: 'off',
+  room: null, host: null, channel: null, conn: 'off', judge: null, botSeen: 0,
   events: new Map(), loaded: false, peers: [], typing: null, lastTrack: '',
   spot: null, seen: {}, err: '', lobbyErr: '', busy: false,
   pins: new Set(lsGet('soup.pins', []) || []), reveal: new Map()
@@ -159,7 +160,8 @@ async function joinRoom(code, quiet) {
 async function enterRoom(code) {
   const r = await api('join', { code });
   leaveRoom(true);
-  S.room = r.code; S.host = r.host; S.events = new Map(); idx = null; S.loaded = false; S.reveal.clear(); S.seen = {};
+  S.room = r.code; S.host = r.host; S.judge = r.judge || 'api'; S.events = new Map(); idx = null; S.loaded = false; S.reveal.clear(); S.seen = {};
+  pollBot();
   lsSet('soup.room', S.room);
   const ch = sb.channel('soup:' + S.room, { config: { presence: { key: me } } });
   ch.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'soup_events', filter: 'room=eq.' + S.room }, p => upsert(p.new))
@@ -175,6 +177,20 @@ async function enterRoom(code) {
   S.channel = ch;
   setHash();
   loadAll();
+}
+// 판정을 방장 PC 봇이 하는 경우, 봇이 30초마다 남기는 출석 시각을 읽는다
+async function pollBot() {
+  if (S.judge !== 'bot') return;
+  const { data } = await sb.from('soup_status').select('bot_seen').eq('id', 1).maybeSingle();
+  const seen = data?.bot_seen ? tms(data.bot_seen) : 0;
+  if (seen !== S.botSeen) { S.botSeen = seen; scheduleRender(); }
+}
+const botOnline = () => S.judge !== 'bot' || Date.now() - S.botSeen < 75000;
+function botBanner() {
+  if (S.judge !== 'bot') return null;
+  return botOnline()
+    ? h('p', { class: 'conn' }, '출제자 봇이 자리에 있어요.')
+    : h('div', { class: 'banner' }, h('span', null, '출제자 봇이 꺼져 있어요. 질문은 남겨 둘 수 있고, 방장 PC에서 출제자 봇을 켜면 쌓인 질문부터 차례로 답해요.'));
 }
 function leaveRoom(silent) {
   if (S.channel) { try { sb.removeChannel(S.channel); } catch {} }
@@ -434,6 +450,7 @@ function renderLobby() {
       h('button', { class: 'btn ghost', type: 'button', onclick: () => leaveRoom(false) }, '방 나가기')),
     h('div', { class: 'people' }, h('span', null, h('img', { src: who(me).av, alt: '' }), (myName || '나') + ' (나)'),
       others.map(p => h('span', null, h('img', { src: who(p.id).av, alt: '' }), who(p.id).name + (p.c ? ' · ' + (P[p.c]?.title || '') : '')))),
+    botBanner(),
     h('p', { class: 'conn' + (S.conn === 'SUBSCRIBED' ? '' : ' bad') }, S.conn === 'SUBSCRIBED' ? (others.length ? `${others.length}명과 함께 있어요` : '아직 나 혼자예요. 친구를 불러 보세요.') : '실시간 연결 중이에요…'));
 }
 function renderHome() {
@@ -547,6 +564,8 @@ function renderTable() {
       !d.over ? h('button', { class: 'btn ghost warn', type: 'button', disabled: S.busy, onclick: giveUp }, `포기하고 진상 보기 · +${FAIL}문`) : null,
       d.L.length && (kind === 'versus' || S.host === me) ? h('button', { class: 'btn ghost', type: 'button', onclick: clearCase }, '식탁 치우기') : null));
 
+  put($('#botBanner'), d.over ? null : botBanner());
+
   // 진상
   if (d.over) {
     const crew = new Map();
@@ -604,12 +623,13 @@ function entry(pid, x, d, kind, rv) {
   const name = x.player === me ? (myName || '나') : (x.name || w.name);
   const av = h('img', { class: 'av', src: avatar(x.player, name), alt: '' });
   const head = extra => h('div', { class: 'who' }, h('b', { text: kind === 'versus' ? '나' : name }), extra, h('span', null, ago(x.created_at)));
-  const retryBtn = (x.status === 'error' || stale) && !d.over ? h('button', { class: 'btn small', type: 'button', disabled: S.busy, onclick: () => retry(x) }, '다시 묻기') : null;
+  const waitBot = stale && S.judge === 'bot';
+  const retryBtn = (x.status === 'error' || (stale && !waitBot)) && !d.over ? h('button', { class: 'btn small', type: 'button', disabled: S.busy, onclick: () => retry(x) }, '다시 묻기') : null;
   const errTag = x.status === 'error' && x.err ? h('span', { class: 'tag' }, errText(x.err)) : null;
   const label = f => rv.facts?.[f] || '…';
   if (x.kind === 'q') {
     const done = x.status === 'done';
-    const side = done ? stamp(x.answer) : x.status === 'error' || stale ? h('span', { class: 'stamp pend' }, '답 없음') : h('span', { class: 'stamp pend' }, h('span', { class: 'dots' }, '생각 중'));
+    const side = done ? stamp(x.answer) : x.status === 'error' || (stale && !waitBot) ? h('span', { class: 'stamp pend' }, '답 없음') : h('span', { class: 'stamp pend' }, h('span', { class: 'dots' }, waitBot ? '출제자 기다리는 중' : '생각 중'));
     const meta = [];
     if (done && x.note && NOTES[x.note]) meta.push(h('span', { class: 'tag' }, NOTES[x.note]));
     if (done) for (const f of x.facts || []) { const ff = P[pid].facts.find(z => z.id === f); if (ff && d.revealed.get(f)?.ev === x.id) meta.push(h('span', { class: 'tag found' }, (ff.need ? '★ 키워드 발견: ' : '+ 보너스 키워드: ') + label(f))); }
@@ -637,7 +657,7 @@ function entry(pid, x, d, kind, rv) {
       side = stamp(x.ok ? '네' : '아니오');
       meta.push(h('span', { class: 'tag' + (x.ok ? ' found' : '') }, x.ok ? '정답이에요!' : `키워드 ${d.need}개 중 ${hit}개 맞힘${part ? ` · ${part}개는 방향만 맞음` : ''} · ${x.final ? `+${FAIL}문` : `+${WRONG}문`}`));
       for (const f of facts) if (x.hits?.[f.id] === 'hit' && d.revealed.get(f.id)?.ev === x.id) meta.push(h('span', { class: 'tag found' }, (f.need ? '★ 키워드 발견: ' : '+ 보너스 키워드: ') + label(f.id)));
-    } else side = x.status === 'error' || stale ? h('span', { class: 'stamp pend' }, '채점 실패') : h('span', { class: 'stamp pend' }, h('span', { class: 'dots' }, '채점 중'));
+    } else side = x.status === 'error' || (stale && !waitBot) ? h('span', { class: 'stamp pend' }, '채점 실패') : h('span', { class: 'stamp pend' }, h('span', { class: 'dots' }, waitBot ? '출제자 기다리는 중' : '채점 중'));
     if (errTag) meta.push(errTag);
     if (retryBtn) meta.push(retryBtn);
     return h('li', { class: cls + ' e-guess' + (x.ok ? ' ok' : '') }, av, head(h('span', null, x.final ? '최종 답안' : '진상 제출')), h('div', { class: 'side' }, side), h('p', { class: 'qt', text: x.body }), meta.length ? h('div', { class: 'meta' }, meta) : null);
@@ -705,6 +725,7 @@ function start() {
   ta.addEventListener('input', () => { autosize(); if (ta.value.trim()) setTyping(true); });
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submitDraft(); } });
   setInterval(() => { if (S.view === 'table' && !$('#sheetRoot').childElementCount) render(); }, 30000);
+  setInterval(() => { if (S.room) pollBot(); }, 20000);
   render();
 
   const [hRoom, hCase] = (location.hash || '').slice(1).toLowerCase().split('/');
