@@ -808,3 +808,195 @@ body.in-table .desk{flex:1;min-height:0}
   .case-bar{padding-bottom:8px}
 }
 @media (max-width:560px){.talk-fab{padding:6px 12px;font-size:13px}}
+
+/* ---------- 창작마당 ---------- */
+.src-tabs{display:flex;align-items:center;gap:6px;margin:0 0 14px;flex-wrap:wrap}
+.src-tabs [role="tab"]{border:1px solid var(--line);background:none;color:var(--muted);border-radius:999px;padding:7px 16px;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:6px}
+.src-tabs [role="tab"][aria-selected="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-strong)}
+.src-tabs .count{font-family:var(--f-type);font-size:11px;color:var(--accent)}
+.src-tabs .make-btn{margin-left:auto}
+.case-card.ugc{cursor:pointer}
+.ugc-thumb{background:repeating-linear-gradient(135deg,#0F161E 0 12px,#0D131A 12px 24px)!important;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;padding:18px;text-align:center;filter:none!important}
+.ugc-title{font-family:var(--f-display);font-size:24px;line-height:1.2;color:#EEF2F5;max-width:90%;text-wrap:balance}
+.ugc-by{font-family:var(--f-type);font-size:11.5px;color:var(--accent)}
+.ugc-stats{display:flex;flex-wrap:wrap;gap:4px 10px;margin:0;font-family:var(--f-type);font-size:11.5px;color:var(--muted)}
+.ugc-stats .stars{color:#F2D27A}
+.mine-row{display:flex;align-items:center;gap:8px}
+.ugc-empty{display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+.cb-author{cursor:default;border-style:dashed}
+.cb-author .cb-t b{color:var(--accent)}
+.stars-pick{display:flex;gap:6px}
+.stars-pick .star{width:44px;height:44px;border:1px solid var(--line);background:#0B1016;border-radius:8px;font-size:22px;color:#3A4652;line-height:1}
+.stars-pick .star.on{color:#F2D27A;border-color:#5A4A26;background:#1A160C}
+.stars-pick:hover .star{color:#F2D27A}
+.stars-pick .star:hover~.star{color:#3A4652}
+
+/* 문제 만들기 (결과 페이지와 같은 전체 화면) */
+.maker{position:fixed;inset:0;z-index:55;display:flex;flex-direction:column;background:radial-gradient(900px 520px at 50% -12%,#10202C 0%,transparent 62%),var(--bg)}
+.maker-in{max-width:760px;margin:0 auto;padding:18px 16px calc(60px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:18px}
+.mk-intro{margin:0;font-size:14px;line-height:1.7;color:var(--muted);border-left:2px solid var(--accent);padding-left:12px}
+.mk-intro b{color:var(--fg)}
+.mk-field{display:flex;flex-direction:column;gap:8px}
+.mk-lbl{margin:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.mk-lbl b{font-size:15px}
+.mk-lbl small{font-size:12px;color:var(--faint)}
+.mk-field textarea{resize:vertical;line-height:1.6}
+.mk-facts{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.mk-fact{display:flex;gap:8px;align-items:flex-start;width:100%}
+.mk-n{font-family:var(--f-type);font-size:12px;color:var(--accent);padding-top:12px;min-width:26px}
+.mk-fact-in{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.mk-fact-in input+input{font-size:13px;padding:7px 12px;color:var(--muted)}
+.mk-x{border:0;background:none;color:var(--faint);width:36px;height:40px;flex:none}
+.mk-x:hover{color:var(--red)}
+.mk-clues{display:flex;flex-direction:column;gap:6px}
+.mk-checks,.mk-review{border:1px solid var(--line);border-radius:8px;padding:14px 16px;background:#0D1319;display:flex;flex-direction:column;gap:8px}
+.mk-list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:13.5px;line-height:1.5}
+.mk-list .err{color:#F0A39C}
+.mk-list .warn{color:#E6D9B8}
+.mk-ok{margin:0;font-size:13.5px;color:#7FC79A}
+.mk-score{margin:0;font-size:14px;color:var(--muted)}
+.mk-score b{font-family:var(--f-type);font-weight:400;font-size:28px;color:#E0B44C}
+.mk-score.good b{color:#7FC79A}
+.mk-score.bad b{color:var(--red)}
+.mk-actions{justify-content:flex-end;gap:8px;flex-wrap:wrap}
+@media (max-width:560px){.src-tabs .make-btn{margin-left:0;width:100%}.mk-actions .btn{flex:1}}
+
+/* ======================================================================
+   사건 화면 2열 카드 (레퍼런스 구성)
+   왼쪽: 현장 사진 · 문제 카드 · 의논 / 오른쪽: 진행 카드 · 심문 기록(질문하기 · 정답 제출하기)
+   ====================================================================== */
+body.in-table #table{max-width:1240px}
+.col-l,.col-r{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0}
+.case-photo:empty,.talk-dock[hidden]{display:none}
+
+/* 카드 공통 */
+.photo-card,.soup-card,.status-card,.desk,.talk-dock .talk-panel{border:1px solid var(--line);border-radius:10px;background:linear-gradient(180deg,#121A23,#0E141B)}
+
+/* 현장 사진 카드 */
+.photo-card{position:relative;margin:0;overflow:hidden;aspect-ratio:16/10;max-height:36vh;width:100%}
+.photo-card img{display:block;width:100%;height:100%;object-fit:cover;filter:saturate(.9) contrast(1.04)}
+.photo-card::before,.photo-card::after{content:"";position:absolute;width:18px;height:18px;border:2px solid var(--accent);z-index:2;pointer-events:none}
+.photo-card::before{left:8px;top:8px;border-right:0;border-bottom:0}
+.photo-card::after{right:8px;bottom:8px;border-left:0;border-top:0}
+.pc-tag{position:absolute;left:16px;top:14px;z-index:2;font-family:var(--f-type);font-size:11px;letter-spacing:.2em;color:#C9D3DC;background:rgba(8,11,15,.72);padding:4px 10px;border-radius:3px}
+.pc-zoom{position:absolute;right:16px;bottom:14px;z-index:2;border:1px solid rgba(255,255,255,.18);background:rgba(8,11,15,.78);color:var(--fg);border-radius:6px;padding:6px 12px;font-size:12.5px;font-weight:600}
+.pc-zoom:hover{border-color:var(--accent)}
+.photo-card.hot{box-shadow:0 0 30px -10px rgba(224,96,63,.55)}
+
+/* 문제 카드 */
+.soup-card{padding:16px 18px}
+.soup-card .lbl{margin-bottom:2px}
+.soup-card .story{font-family:var(--f-ui);font-weight:700;font-size:17px;line-height:1.65;color:#EEF2F5;margin-top:8px}
+.soup-card .kw{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:12px}
+.soup-card .kw .note{margin-left:auto;font-size:11.5px;color:var(--faint);font-family:var(--f-ui)}
+.soup-card .slots{margin-top:10px}
+
+/* 진행 카드 */
+.status-card{padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.sc-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.sc-lbl{font-family:var(--f-type);font-size:11.5px;letter-spacing:.14em;color:var(--muted)}
+.sc-top .nx{font-size:12px;color:var(--muted)}
+.sc-score{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.sc-score>b{font-family:var(--f-type);font-weight:400;font-size:34px;line-height:1;color:var(--accent-strong)}
+.sc-score .of{font-family:var(--f-type);font-size:13px;color:var(--muted)}
+.sc-who{font-size:12px;color:var(--faint)}
+.sc-score .heat{margin-left:auto;flex:0 1 260px;align-self:center}
+.status-card .m-sub{margin:0;font-family:var(--f-type);font-size:11.5px;color:var(--faint)}
+.sc-people{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 0}
+.sc-p{flex:none;display:grid;grid-template-columns:28px auto;grid-template-rows:auto auto;column-gap:8px;align-items:center;border:1px solid var(--line-soft);border-radius:8px;padding:6px 10px 6px 6px;min-width:120px}
+.sc-av{grid-row:1 / span 2;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--accent);color:var(--accent);font-size:12px;font-weight:700}
+.sc-p b{font-size:12.5px;white-space:nowrap}
+.sc-p small{font-family:var(--f-type);font-size:10.5px;color:var(--muted);white-space:nowrap}
+.sc-p.me{border-color:#2C4A60;background:var(--accent-soft)}
+.sc-p.done .sc-av{background:#16301F;border-color:#5FA36B;color:#7FC79A}
+.sc-row{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;align-items:stretch}
+.sc-row::-webkit-scrollbar,.sc-people::-webkit-scrollbar{display:none}
+.sc-clue{flex:none;display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:#0B1016;border-radius:8px;padding:3px 10px 3px 3px;color:var(--fg);text-align:left;min-height:40px}
+.sc-clue img{width:40px;height:32px;object-fit:cover;border-radius:5px}
+.sc-clue>i{width:32px;height:32px;border-radius:5px;display:grid;place-items:center;font-style:normal;font-size:13px;background:#0E141B;color:var(--faint)}
+.sc-clue span{display:flex;flex-direction:column;line-height:1.2}
+.sc-clue b{font-size:12px;white-space:nowrap}
+.sc-clue small{font-family:var(--f-type);font-size:10.5px;color:var(--muted);white-space:nowrap}
+.sc-clue.locked{border-style:dashed}
+.sc-clue.open{border-color:#4A3E24}
+.sc-clue.open>i{color:var(--tent);background:#16130B;font-family:var(--f-type)}
+.sc-clue.fresh{animation:fresh 1.6s ease-out 2}
+.sc-photo{display:none}
+.sc-row .btn.small{flex:none;white-space:nowrap}
+.sc-buy{margin-left:auto}
+
+/* 심문 기록 카드 */
+.desk{padding:12px 14px 12px;display:flex;flex-direction:column;gap:8px;min-height:0}
+.desk-head{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;padding-bottom:8px;border-bottom:1px solid var(--line-soft)}
+.desk-head .en{display:block;margin:0 0 2px;font-size:10.5px;color:var(--muted)}
+.desk-head h3{font-family:var(--f-display);font-weight:400;font-size:19px}
+.desk-n{margin:0;display:flex;align-items:baseline;gap:2px}
+.desk-n b{font-family:var(--f-type);font-weight:400;font-size:24px;color:var(--accent-strong)}
+.desk-n span{font-size:12px;color:var(--muted)}
+.desk .log{border-top:0}
+.c-head{margin:0 0 6px;display:flex;align-items:baseline;gap:8px}
+.c-head b{font-size:13px;color:var(--accent)}
+.c-head small{font-size:11.5px;color:var(--faint)}
+body.in-table .composer{border-top:1px solid var(--line-soft);padding:10px 0 0}
+.composer .comp-row .btn{min-width:96px}
+.guess-row{border-top:1px solid var(--line-soft);padding-top:10px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.guess-row .c-head{margin:0;flex-direction:column;gap:2px}
+.guess-row .c-head b{color:#F0A39C}
+.guess-open{border-color:#5A2724;color:#F2D9D6;background:#1A1212;min-width:140px}
+.guess-open:hover{border-color:var(--red)}
+.guess-row[hidden]{display:none}
+
+/* 의논 (넓은 화면: 왼쪽 아래 붙박이) */
+.talk-dock{flex:1;min-height:150px;display:flex}
+.talk-dock .talk-panel{width:100%;height:auto;flex:1;box-shadow:none;min-height:0}
+.talk-dock .talk-x{display:none}
+
+/* 넓은 화면: 2열 한 화면 */
+@media (min-width:901px){
+  body.in-table .table-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);grid-template-rows:minmax(0,1fr);gap:16px;align-items:stretch}
+  body.in-table .col-l .soup{flex:none;max-height:none;overflow:visible}
+  body.in-table .col-r .desk{flex:1}
+  body.in-table .talk{display:none}
+}
+/* 낮은 넓은 화면: 사진을 줄인다 */
+@media (min-width:901px) and (max-height:820px){.photo-card{max-height:28vh}}
+
+/* 좁은 화면: 한 줄로 쌓기 (진행 카드 → 문제 카드 → 심문 기록) */
+@media (max-width:900px){
+  .col-l,.col-r{display:contents}
+  .case-photo,.talk-dock{display:none}
+  .status-card{order:1;padding:10px 12px;gap:6px}
+  body.in-table .soup{order:2}
+  body.in-table .desk{order:3}
+  .sc-photo{display:flex}
+  .sc-score>b{font-size:26px}
+  .sc-score .heat .h-lbl{display:none}
+  .sc-people{display:none}
+  .sc-buy{margin-left:0}
+  .soup-card .story{font-size:15.5px;font-weight:600}
+  .soup-card .kw .note{display:none}
+  .desk{padding:10px 10px}
+  .desk-head{display:none}
+  .guess-row{padding-top:8px}
+  .guess-row .c-head small{display:none}
+  .composer .c-head{display:none}
+}
+/* 진행 카드 다듬기 · 좁은 화면 압축 */
+.sc-clue span{display:flex;flex-direction:column;gap:1px;line-height:1.25}
+.sc-clue b,.sc-clue small{display:block}
+.sc-nx2,.sc-talk{display:none}
+@media (max-width:900px){
+  .talk-fab{display:none}
+  .sc-talk{display:flex}
+  .sc-top,.status-card .m-sub{display:none}
+  .sc-score{flex-wrap:nowrap}
+  .sc-nx2{display:inline;margin-left:auto;font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .sc-score .heat{margin-left:8px;flex:none}
+  .sc-score .heat .tb{display:none}
+  .soup-card .kw{display:none}
+  .soup-card{padding:10px 12px}
+  .soup-card .lbl{font-size:10.5px}
+  .talk{bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+}
+@media (max-width:900px) and (max-height:700px){.soup-card .lbl{display:none}.soup-card .story{margin-top:0}.slot .st{-webkit-line-clamp:1}}
+@media (min-width:901px) and (max-height:800px){.desk-head .en,.composer .c-head,.guess-row .c-head small,.status-card .m-sub,.sc-top{display:none}.sc-nx2{display:inline;margin-left:8px;font-size:12px;color:var(--muted)}.desk-head h3{font-size:17px}.desk-head{padding-bottom:6px}}

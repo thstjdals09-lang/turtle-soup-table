@@ -8,7 +8,7 @@
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { STALE_MS, derive } from "./rules.js";
-import { cleanGrade, cleanJudge, gradeSchema, gradeSystem, gradeUser, judgeSchema, judgeSystem, judgeUser, metaOf } from "./judge.js";
+import { cleanGrade, cleanJudge, cleanReview, gradeSchema, gradeSystem, gradeUser, judgeSchema, judgeSystem, judgeUser, metaOf, reviewSchema, reviewSystem, reviewUser } from "./judge.js";
 
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
@@ -62,6 +62,11 @@ async function handle(b: Row) {
     case "chat": return chat(b);
     case "like": return like(b);
     case "rate": return rate(b);
+    case "custom_list": return customList(b);
+    case "custom_publish": return customPublish(b);
+    case "custom_hide": return customHide(b);
+    case "custom_rate": return customRate(b);
+    case "custom_review": return customReview(b);
     case "reveal": return reveal(b);
     case "clear": return clear(b);
     case "seed": return seed(b);
@@ -224,6 +229,7 @@ async function ask(b: Row) {
   if (pending.length >= 3) throw new Fail("too_many");
   await budget();
   const id = await insert({ room: r.code, puzzle: c.pid, scope: c.scope, player: c.player, name: c.name, kind: "q", body: text, status: "pending" });
+  if (!list.some((e) => e.kind === "q")) await customBump(c.pid, "plays");
   await judgeLater(() => judgeAndSave(id, null));
   return { id };
 }
@@ -260,7 +266,9 @@ async function saveJudge(e: Row, out: unknown, appealing: boolean) {
 }
 async function saveGrade(e: Row, out: unknown) {
   const s = await puzzleOf(e.puzzle);
-  await patchIfWaiting(e.id, { status: "done", ...cleanGrade(s, out), err: null }, "status");
+  const g = cleanGrade(s, out);
+  await patchIfWaiting(e.id, { status: "done", ...g, err: null }, "status");
+  if (g.ok) await customBump(e.puzzle, "solves");
 }
 async function patchIfWaiting(id: number, row: Row, field: string) {
   const { error } = await db.from("soup_events").update({ ...row, updated_at: now() }).eq("id", id).eq(field, "pending");
@@ -382,6 +390,127 @@ async function rate(b: Row) {
   const { error } = await db.from("soup_events").delete().eq("room", r.code).eq("puzzle", pid).eq("kind", "rate").eq("player", player);
   if (error) throw error;
   return { id: await insert({ room: r.code, puzzle: pid, scope: "coop", player, name, kind: "rate", body: b.value }) };
+}
+
+/* ---------- 창작마당 ---------- */
+// 사람들이 만든 사건은 soup_secrets 에 id "u-xxxxxx" 로 들어간다 (data.custom = true).
+// 진상 · 키워드 문장 · 단서는 그대로 비밀이고, custom_list 는 공개 정보(제목 · 이야기 · 키워드 칸 수 · 별점 · 플레이 수)만 내보낸다.
+const CUSTOM_RE = /^u-[a-z0-9]{6}$/;
+const NEED_RANGE: Record<number, [number, number]> = { 1: [2, 4], 2: [3, 5], 3: [4, 6] };
+function publicCard(id: string, s: Row, player = "") {
+  const r = Object.values(s.ratings || {}) as number[];
+  return {
+    id, title: s.title, story: s.story, level: s.level, tags: s.tags || [], author_name: s.author_name, mine: !!player && s.author === player,
+    status: s.status, facts: (s.facts || []).map((f: Row) => ({ id: f.id, need: f.need })), clues: (s.clues || []).length,
+    plays: s.plays || 0, solves: s.solves || 0, rating_n: r.length, rating_sum: r.reduce((a, x) => a + x, 0),
+    my_rating: player ? s.ratings?.[player] || 0 : 0, created_at: s.created_at,
+  };
+}
+async function customList(b: Row) {
+  const player = typeof b.player === "string" && PLAYER_RE.test(b.player) ? b.player : "";
+  const { data, error } = await db.from("soup_secrets").select("puzzle,data").like("puzzle", "u-%").limit(2000);
+  if (error) throw error;
+  const items = (data || []).filter((r: Row) => r.data?.custom && (r.data.status === "public" || r.data.author === player))
+    .map((r: Row) => publicCard(r.puzzle, r.data, player));
+  return { items };
+}
+const need = (v: unknown, min: number, max: number, code: string) => {
+  const s = str(v, max);
+  if ([...s].length < min) throw new Fail(code);
+  return s;
+};
+function readDraft(b: Row) {
+  const level = [1, 2, 3].includes(Number(b.level)) ? Number(b.level) : 2;
+  const title = need(b.title, 2, 30, "bad_title");
+  const story = need(b.story, 20, 400, "bad_story");
+  const truth = need(b.truth, 80, 2000, "bad_truth");
+  const raw = (Array.isArray(b.facts) ? b.facts : []).slice(0, 8) as Row[];
+  const req = raw.filter((f) => f?.need !== false).map((f) => ({ label: need(f.label, 5, 60, "bad_fact"), check: str(f.check, 200) }));
+  const bon = raw.filter((f) => f?.need === false).slice(0, 2).map((f) => ({ label: need(f.label, 5, 60, "bad_fact"), check: str(f.check, 200) }));
+  const [lo, hi] = NEED_RANGE[level];
+  if (req.length < lo || req.length > hi) throw new Fail("bad_fact_count");
+  const facts = [
+    ...req.map((f, i) => ({ id: "f" + (i + 1), need: true, label: f.label, check: f.check || f.label })),
+    ...bon.map((f, i) => ({ id: "b" + (i + 1), need: false, label: f.label, check: f.check || f.label })),
+  ];
+  const clues = (Array.isArray(b.clues) ? b.clues : []).map((c: unknown) => str(c, 160)).filter(Boolean).slice(0, 3).map((text: string) => ({ text }));
+  const canon = (Array.isArray(b.canon) ? b.canon : []).slice(0, 20)
+    .filter((x: unknown) => Array.isArray(x) && x.length === 2)
+    .map(([q, a]: unknown[]) => [str(q, 120), str(a, 80)])
+    .filter(([q, a]: string[]) => q && /^(네|아니오|관계없음|애매함)/.test(a));
+  const tags = (Array.isArray(b.tags) ? b.tags : []).map((t: unknown) => str(t, 12)).filter(Boolean).slice(0, 4);
+  return { level, title, story, truth, facts, clues, canon, tags };
+}
+async function customRow(id: string) {
+  if (!CUSTOM_RE.test(id)) throw new Fail("bad_puzzle");
+  const { data, error } = await db.from("soup_secrets").select("data").eq("puzzle", id).maybeSingle();
+  if (error) throw error;
+  if (!data?.data?.custom) throw new Fail("bad_puzzle");
+  return data.data as Row;
+}
+async function customSave(id: string, s: Row) {
+  delete s.meta;
+  const { error } = await db.from("soup_secrets").update({ data: s }).eq("puzzle", id);
+  if (error) throw error;
+  puzzles.delete(id);
+}
+async function customPublish(b: Row) {
+  const { player, name } = who(b);
+  const draft = readDraft(b);
+  const { data: rows, error } = await db.from("soup_secrets").select("data").like("puzzle", "u-%").limit(2000);
+  if (error) throw error;
+  const day = Date.now() - 86400000;
+  if ((rows || []).filter((r: Row) => r.data?.author === player && Date.parse(r.data.created_at) > day).length >= 5) throw new Fail("custom_limit");
+  const abc = "abcdefghjkmnpqrstuvwxyz23456789";
+  for (let k = 0; k < 8; k++) {
+    const id = "u-" + Array.from(crypto.getRandomValues(new Uint8Array(6)), (x) => abc[x % abc.length]).join("");
+    const data = { custom: true, status: "public", author: player, author_name: name, created_at: now(), sceneNote: "", spots: [], plays: 0, solves: 0, ratings: {}, ...draft };
+    const { error: e2 } = await db.from("soup_secrets").insert({ puzzle: id, data });
+    if (!e2) return { id, card: publicCard(id, data, player) };
+    if (e2.code !== "23505") throw e2;
+  }
+  throw new Fail("busy");
+}
+async function customHide(b: Row) {
+  const { player } = who(b);
+  const id = str(b.puzzle, 40);
+  const s = await customRow(id);
+  if (s.author !== player) throw new Fail("not_yours");
+  s.status = b.hide ? "hidden" : "public";
+  s.updated_at = now();
+  await customSave(id, s);
+  return { card: publicCard(id, s, player) };
+}
+async function customRate(b: Row) {
+  const { player } = who(b);
+  const id = str(b.puzzle, 40);
+  const s = await customRow(id);
+  const stars = Math.round(Number(b.stars));
+  if (!(stars >= 1 && stars <= 5)) throw new Fail("bad_rate");
+  if (s.author === player) throw new Fail("own_puzzle");
+  const { count, error } = await db.from("soup_events").select("id", { count: "exact", head: true })
+    .eq("puzzle", id).eq("player", player).in("kind", ["q", "guess", "giveup"]);
+  if (error) throw error;
+  if (!count) throw new Fail("not_played");
+  s.ratings = { ...(s.ratings || {}), [player]: stars };
+  await customSave(id, s);
+  return { card: publicCard(id, s, player) };
+}
+// 플레이 수(그 방·그 범위에서 첫 질문) · 해결 수(첫 정답)
+async function customBump(id: string, what: "plays" | "solves") {
+  if (!CUSTOM_RE.test(id)) return;
+  try {
+    const s = await customRow(id);
+    s[what] = (s[what] || 0) + 1;
+    await customSave(id, s);
+  } catch (e) { console.error("custom bump:", e); }
+}
+// AI 검수: 반전 · 공정성 · 키워드 겹침을 보고, 출제자 메모(자주 나올 질문의 판정)와 채점 기준을 만들어 준다
+async function customReview(b: Row) {
+  who(b);
+  const draft = readDraft(b);
+  const out = await callModel(reviewSystem(), reviewUser(draft), reviewSchema(draft), "medium");
+  return cleanReview(draft, out);
 }
 
 /* ---------- 공개된 것 ---------- */

@@ -75,6 +75,18 @@ const ERR = {
   bot_failed: '출제자 봇이 판정하지 못했어요. 다시 묻기를 눌러 주세요.',
   gemini_busy: '무료 AI가 잠깐 붐벼요. 조금 뒤 다시 묻기를 누르거나, 방장 출제자 봇이 켜져 있으면 봇이 대신 답해요.',
   no_clue: '더 열 단서가 없어요.',
+  bad_title: '제목을 2~30자로 적어 주세요.',
+  bad_story: '이야기를 20~400자로 적어 주세요.',
+  bad_truth: '진상을 80자 이상 적어 주세요.',
+  bad_fact: '키워드를 5~60자로 적어 주세요.',
+  bad_fact_count: '난이도에 맞는 필수 키워드 수를 맞춰 주세요.',
+  custom_limit: '사건은 하루에 5개까지 올릴 수 있어요.',
+  not_yours: '내가 만든 사건만 바꿀 수 있어요.',
+  own_puzzle: '내가 만든 사건에는 별점을 줄 수 없어요.',
+  not_played: '사건을 풀어 본 뒤에 별점을 줄 수 있어요.',
+  bad_puzzle: '그런 사건이 없어요.',
+  gemini_error: 'AI가 응답하지 못했어요. 잠시 뒤 다시 해 주세요.',
+  refused: 'AI가 이 내용은 다루지 않겠다고 했어요. 표현을 바꿔 주세요.',
   server: '출제자가 답을 정하지 못했어요. 다시 묻기를 눌러 주세요.'
 };
 const errText = c => ERR[c] || ERR.server;
@@ -105,7 +117,8 @@ const S = {
   events: new Map(), loaded: false, peers: [], typing: null, lastTrack: '',
   spot: null, seen: {}, err: '', lobbyErr: '', busy: false,
   pins: new Set(lsGet('soup.pins', []) || []), reveal: new Map(),
-  arc: { f: 'all', q: '', sort: 'no', ...(lsGet('soup.arc', {}) || {}) },
+  arc: { f: 'all', q: '', sort: 'no', src: 'official', cf: 'pop', ...(lsGet('soup.arc', {}) || {}) },
+  custom: [], draft: null,
   watch: null,  // 경쟁전에서 내 기록이 끝난 뒤 지켜보는 다른 수사관
 };
 const narrow = () => matchMedia('(max-width:900px)').matches;
@@ -362,7 +375,7 @@ function shareText(pid, d) {
   const res = d.over === 'solved' ? `✅ 사건 종결 · ${grade(d)} · ${d.total}문` : `🧊 미제 처리 · ${d.total}문`;
   const g = trailOf(d).map(t => t.g); const rows = [];
   for (let i = 0; i < g.length; i += 10) rows.push(g.slice(i, i + 10).join(''));
-  return [`🍲 바다거북 수프 식탁 ${num(PUZZLES.indexOf(p))} 「${p.title}」`, `${res} · ${mode}${spanOf(d) ? ' · ' + spanOf(d) : ''}`, ...rows, siteUrl()].join('\n');
+  return [`🍲 바다거북 수프 식탁 ${noOf(p)} 「${p.title}」`, `${res} · ${mode}${spanOf(d) ? ' · ' + spanOf(d) : ''}`, ...rows, siteUrl()].join('\n');
 }
 
 // 수사 보고서 이미지 (1080×1350, 스포일러 없음): 사건 사진 · 결과 도장 · 문수 · 수사 경과 · 수사관
@@ -405,7 +418,7 @@ async function saveReport(pid, d, btn) {
     g.fillStyle = 'rgba(8,11,15,.78)'; g.fillRect(X - 14, 48, 470, 48);
     g.fillStyle = '#C9524B'; g.font = type(26); g.fillText('CONFIDENTIAL · 수사 보고서', X, 81);
     // 사건 번호 · 제목
-    g.fillStyle = '#C9524B'; g.font = type(30); g.fillText(`CASE FILE ${num(PUZZLES.indexOf(p))}`, X, 590);
+    g.fillStyle = '#C9524B'; g.font = type(30); g.fillText(`CASE FILE ${noOf(p)}`, X, 590);
     g.fillStyle = '#EEF2F5'; g.font = disp(76);
     const tl = wrapText(g, p.title, W - X * 2 - 240).slice(0, 2);
     tl.forEach((t, i) => g.fillText(t, X, 680 + i * 84));
@@ -500,7 +513,7 @@ function submitDraft() {
 }
 async function submitTalk() {
   const input = $('#talkInput'); const text = input.value.trim();
-  if (!text || !S.caseId || playing() !== 'coop' || S.busy) return;
+  if (!text || !S.caseId || S.busy) return;
   setTyping(false);
   S.talkJump = true;
   if (await act('chat', { text })) input.value = '';
@@ -725,6 +738,19 @@ function renderHome() {
   renderLobby();
   renderArchiveTools();
   const q = S.arc.q.trim().toLowerCase();
+  if (S.arc.src === 'custom') {
+    const cf = S.arc.cf;
+    let cl = customList().filter(p => (cf === 'mine' ? p.mine : p.status === 'public'))
+      .filter(p => !q || (p.title + ' ' + p.story + ' ' + (p.author_name || '') + ' ' + (p.tags || []).join(' ')).toLowerCase().includes(q));
+    const by = { pop: (a, b) => popOf(b) - popOf(a), star: (a, b) => bayesOf(b) - bayesOf(a) || b.rating_n - a.rating_n, plays: (a, b) => b.plays - a.plays, new: (a, b) => tms(b.created_at) - tms(a.created_at), mine: (a, b) => tms(b.created_at) - tms(a.created_at) }[cf] || ((a, b) => popOf(b) - popOf(a));
+    cl = cl.sort(by);
+    $('#arcCount').textContent = `${cl.length}건`;
+    put($('#cases'), cl.length ? cl.map(customCard) : h('div', { class: 'empty ugc-empty' },
+      h('p', null, cf === 'mine' ? '아직 만든 사건이 없어요.' : '아직 올라온 사건이 없어요. 첫 번째 출제자가 되어 보세요.'),
+      h('button', { class: 'btn primary', type: 'button', onclick: openMaker }, '＋ 문제 만들기')));
+    $('#homeNote').textContent = '사람들이 직접 만든 사건이에요. 풀고 나서 별점을 매기면 인기순이 바뀌어요.';
+    return;
+  }
   let list = PUZZLES.map((p, i) => ({ p, i, st: caseState(p) }))
     .filter(x => S.arc.f === 'all' || x.st === S.arc.f)
     .filter(x => !q || (x.p.title + ' ' + x.p.story + ' ' + (x.p.tags || []).join(' ')).toLowerCase().includes(q));
@@ -747,7 +773,6 @@ function renderHome() {
       h('div', { class: 'thumb', svg: artHTML(p.id, d?.over ? S.reveal.get(p.id + '|coop')?.data : null) }, h('span', { class: 'no' }, num(i)), d?.over ? h('span', { class: 'closed' + (d.over === 'solved' ? '' : ' fail') }, d.over === 'solved' ? '사건 종결' : '미제 처리') : null),
       h('div', { class: 'body' },
         h('h3', { text: p.title }),
-        h('div', { class: 'tagline' }, (p.tags || []).map(g => h('span', { class: 'genre' }, g))),
         h('p', { class: 'teaser', text: p.story }),
         ranks.length || (vd && vd.L.length) ? h('p', { class: 'vs' }, `따로 풀기 ${ranks.length}명${best ? ` · 최저 ${best.n}문` : ''}${vd && vd.L.length ? ` · 내 기록 ${vd.over === 'solved' ? vd.total + '문 해결' : vd.n + '문'}` : ''}`) : null,
         h('div', { class: 'foot' }, bowls(p.level),
@@ -764,6 +789,16 @@ function caseState(p) {
   return d.over ? 'closed' : d.L.some(e => e.kind !== 'chat') ? 'open' : 'new';
 }
 function renderArchiveTools() {
+  const src = S.arc.src === 'custom' ? 'custom' : 'official';
+  for (const b of $('#srcTabs').querySelectorAll('[data-src]')) b.setAttribute('aria-selected', String(b.dataset.src === src));
+  const cn = customList().filter(p => p.status === 'public').length;
+  $('#customCount').textContent = cn ? String(cn) : '';
+  $('#arcSort').hidden = src === 'custom';
+  if (src === 'custom') {
+    const chips = [['pop', '인기'], ['star', '별점'], ['plays', '플레이'], ['new', '최신'], ['mine', '내가 만든']];
+    put($('#arcChips'), chips.map(([k, t]) => h('button', { class: 'chip', type: 'button', 'aria-pressed': String(S.arc.cf === k), onclick: () => { S.arc.cf = k; saveArc(); render(); } }, t)));
+    return;
+  }
   const n = st => PUZZLES.filter(p => caseState(p) === st).length;
   const chips = [['all', '전체', PUZZLES.length], ['new', '미착수', n('new')], ['open', '수사 중', n('open')], ['closed', '종결', n('closed')]];
   put($('#arcChips'), chips.map(([k, t, c]) => h('button', { class: 'chip', type: 'button', 'aria-pressed': String(S.arc.f === k), onclick: () => { S.arc.f = k; saveArc(); render(); } }, `${t} ${c}`)));
@@ -789,37 +824,69 @@ function renderTable() {
   const d = dOf(pid, kind);
   const rv = revealOf(pid, kind, d);
   const bonusN = p.facts.filter(f => !f.need).length;
-  $('#tNo').textContent = num(PUZZLES.indexOf(p));
+  $('#tNo').textContent = noOf(p);
   $('#tTitle').textContent = p.title;
   for (const b of $('#playSeg').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.play === kind));
 
   $('#tableGrid').classList.toggle('over', !!d.over);
   const look = watching();
-  const myOver = kind === 'versus' && !!derive(p, index().logs.get(pid + '|' + me) || []).over;
   const seenKey = pid + ':' + kind;
   const seenOpen = S.seen[seenKey] || (S.seen[seenKey] = new Set(d.open));
   const fresh = new Set([...d.open].filter(x => !seenOpen.has(x)));
 
-  // 문수 미터 · 수프 온도 (두 줄로 짧게)
+  // 진행 카드: 문수 · 단서 · 참가자 (레퍼런스처럼 오른쪽 위 카드 하나)
   const heat = heatOf(d);
   const pct = v => Math.min(100, (v / CAP) * 100);
   const nx = d.over ? (d.over === 'solved' ? `해결 · ${grade(d)}` : '사건 종료') : d.capped ? '질문 마감 · 최종 답안 1회' : d.nextClue ? `다음 단서까지 ${d.nextClue.at - d.n}문` : `마감까지 ${CAP - d.n}문`;
-  const sub = [`질문 ${d.q}`, d.rej ? `반려 ${d.rej}` : null, d.wrong ? `오답 ${d.wrong} (+${d.wrong * WRONG})` : null, d.bought ? `긴급 열람 +${d.bought}` : null, d.bonus ? `보너스 −${BONUS * d.bonus}` : null].filter(Boolean).join(' · ');
-  put($('#meter'),
-    h('div', { class: 'm-row' },
-      h('span', { class: 'm-n' }, h('b', { text: d.total }), h('span', { class: 'of' }, `/${CAP}문`)),
-      h('div', { class: 'bar', role: 'img', 'aria-label': `${d.n}문 / ${CAP}문. 단서는 ${CLUE_AT.join('·')}문에 열려요` },
-        h('i', { style: `width:${pct(d.n)}%` }), CLUE_AT.map(t => h('s', { style: `left:${pct(t)}%`, title: `${t}문 단서` })), h('s', { class: 'end', style: 'left:calc(100% - 2px)' })),
+  const sub = [`질문 ${d.q}`, d.rej ? `반려 ${d.rej}` : null, d.wrong ? `오답 ${d.wrong} (+${d.wrong * WRONG})` : null, d.bought ? `긴급 단서 +${d.bought}` : null, d.bonus ? `보너스 −${BONUS * d.bonus}` : null].filter(Boolean).join(' · ');
+  const clueOf = i => (rv.clues || []).find(c => c.i === i);
+  const ranks = kind === 'versus' ? rankFor(pid) : [];
+  const people = kind === 'versus'
+    ? ranks.map(r => ({ id: r.uid, name: who(r.uid).name, sub: r.st === 'solved' ? `${r.n}문 해결` : r.st === 'play' ? `${r.n}문 · 키워드 ${r.k}` : `${r.n}문 · 실패`, done: r.st === 'solved', me: r.uid === me }))
+    : [{ id: me, name: myName || '나', me: true }, ...viewersHere(pid).filter(x => !x.isMe).map(x => ({ id: x.id, name: who(x.id).name }))]
+      .map(x => ({ ...x, sub: `질문 ${d.L.filter(e => e.kind === 'q' && e.player === x.id && e.status === 'done' && e.answer !== '반려').length}` }));
+  const clueBtns = d.clues.map(c => {
+    const got = clueOf(c.i);
+    return h('button', { class: 'sc-clue' + (c.open ? ' open' : ' locked') + (fresh.has(c.id) ? ' fresh' : ''), type: 'button',
+      'aria-label': c.open ? `단서 #${c.i + 1} 보기` : `단서 #${c.i + 1} · ${c.at}문에 열려요`,
+      onclick: () => (c.open ? openClue(got || { i: c.i }, got?.text) : lockedClue(c)) },
+      c.open && got?.img ? h('img', { src: got.img, alt: '', loading: 'lazy' }) : h('i', { 'aria-hidden': 'true' }, c.open ? '!' : '🔒'),
+      h('span', null, h('b', null, `단서 #${c.i + 1}`), h('small', null, c.open ? (c.bought ? '긴급 열람' : '열림') : `${c.at}문`)));
+  });
+  put($('#statusCard'),
+    h('div', { class: 'sc-top' },
+      h('span', { class: 'sc-lbl' }, h('i', { class: 'en' }, 'FREE INVESTIGATION'), kind === 'versus' ? '따로 풀기' : '함께 풀기'),
       h('span', { class: 'nx' }, nx)),
-    h('div', { class: 'm-row m-row2' },
-      h('span', { class: 'm-sub' }, sub),
-      h('div', { class: 'heat' + (heat >= 88 ? ' boil' : heat >= 68 ? ' hot' : ''), title: HEAT_HELP },
+    h('div', { class: 'sc-score' },
+      h('b', { text: d.total }), h('span', { class: 'of' }, `/${CAP}문`),
+      h('span', { class: 'sc-who' }, kind === 'versus' ? (look ? `(${who(S.watch).name})` : '(나)') : '(팀)'),
+      h('span', { class: 'sc-nx2' }, nx),
+      h('span', { class: 'heat' + (heat >= 88 ? ' boil' : heat >= 68 ? ' hot' : ''), title: HEAT_HELP },
         h('span', { class: 'h-lbl' }, '수프 온도'),
         h('span', { class: 'tb', role: 'img', 'aria-label': `수프 온도 ${heat}도, ${heatName(heat)}` }, h('i', { style: `clip-path:inset(0 ${100 - heat}% 0 0)` })),
-        h('b', null, `${heat}°`), h('span', { class: 'h-name' }, heatName(heat)))));
+        h('b', null, `${heat}°`), h('span', { class: 'h-name' }, heatName(heat)))),
+    h('div', { class: 'bar', role: 'img', 'aria-label': `${d.n}문 / ${CAP}문. 단서는 ${CLUE_AT.join('·')}문에 열려요` },
+      h('i', { style: `width:${pct(d.n)}%` }), CLUE_AT.map(t => h('s', { style: `left:${pct(t)}%`, title: `${t}문 단서` })), h('s', { class: 'end', style: 'left:calc(100% - 2px)' })),
+    h('p', { class: 'm-sub' }, sub),
+    people.length > 1 || kind === 'versus' ? h('div', { class: 'sc-people' }, people.slice(0, 6).map(x => h('div', { class: 'sc-p' + (x.me ? ' me' : '') + (x.done ? ' done' : '') },
+      h('span', { class: 'sc-av' }, x.done ? '✓' : (x.name || '?').slice(0, 1)), h('b', { text: x.me ? `${x.name} (나)` : x.name }), h('small', null, x.sub)))) : null,
+    h('div', { class: 'sc-row' },
+      p.photo ? h('button', { class: 'sc-clue sc-photo', type: 'button', onclick: openZoom, 'aria-label': '현장 사진과 메모 보기' },
+        h('img', { src: p.photo, alt: '' }), h('span', null, h('b', null, '현장 사진'), h('small', null, `메모 ${(p.spots || []).length}`))) : null,
+      clueBtns,
+      h('button', { class: 'sc-clue sc-talk', type: 'button', onclick: () => toggleTalk() }, h('i', { 'aria-hidden': 'true' }, '💬'), h('span', null, h('b', null, kind === 'versus' ? '로비 채팅' : '의논'), h('small', { class: 'talk-unread' }, ''))),
+      d.nextClue && !d.over && !look ? h('button', { class: 'btn small sc-buy', type: 'button', disabled: S.busy, onclick: buyClue }, `긴급 단서 열람 +${BUY}문`) : null,
+      kind === 'versus' ? h('button', { class: 'btn small ghost', type: 'button', onclick: () => rankSheet(pid) }, '점수판') : null,
+      look ? null : h('button', { class: 'btn small ghost', type: 'button', 'aria-label': '더보기: 질문 끝내기 · 포기 · 식탁 치우기', onclick: () => moreSheet(pid) }, '⋯')));
 
-  // 문제와 키워드 (메인) · 진상 제출은 여기서만
-  const here = viewersHere(pid).filter(x => !x.isMe);
+  // 현장 사진 카드 (왼쪽 위, 사진이 있는 사건만)
+  put($('#casePhoto'), p.photo ? h('figure', { class: 'photo-card' + (heat >= 68 ? ' hot' : '') },
+    h('img', { src: p.photo, alt: `${p.title} 현장 사진` }),
+    heat >= 45 ? h('div', { class: 'steam', 'aria-hidden': 'true', style: `--so:${heat >= 88 ? 0.9 : heat >= 68 ? 0.6 : 0.32}` }, h('i'), h('i'), h('i')) : null,
+    h('span', { class: 'pc-tag' }, `CASE ${noOf(p)} · CONFIDENTIAL`),
+    h('button', { class: 'pc-zoom', type: 'button', onclick: openZoom }, `확대 · 현장 메모 ${(p.spots || []).length}`)) : null);
+
+  // 문제 카드: 이야기 + 키워드 칸
   const slots = p.facts.map(f => {
     const r = d.revealed.get(f.id), open = !!r || !!d.over;
     const label = open ? (rv.facts?.[f.id] || '…') : f.need ? '아직 밝혀지지 않은 키워드' : `보너스 · 찾으면 −${BONUS}문`;
@@ -827,38 +894,13 @@ function renderTable() {
       title: label + (r ? ` · ${kind === 'versus' ? '' : who(r.by).name + '의 '}${r.via === 'guess' ? '진상 제출' : '질문'}로 밝혀짐` : '') },
       h('span', { class: 'sn' }, f.need ? (open ? '★' : '?') : '+'), h('span', { class: 'st', text: label }));
   });
-  const canGuess = !d.over && !look;
   put($('#soupArea'), h('article', { class: 'soup-card' + (S.briefOpen ? ' open' : '') },
-    h('div', { class: 'lbl' }, h('span', null, h('i', { class: 'en' }, 'CASE BRIEF'), kind === 'versus' ? '따로 풀기' : '함께 풀기'),
-      h('span', { class: 'lbl-r' }, (p.tags || []).map(g => h('span', { class: 'genre' }, g)), bowls(p.level))),
+    h('div', { class: 'lbl' }, h('span', null, h('i', { class: 'en' }, 'CASE BRIEF'), p.custom ? `창작 · 출제 ${p.author_name || '손님'}` : noOf(p)), h('span', { class: 'lbl-r' }, bowls(p.level))),
     h('p', { class: 'story', text: p.story, title: '눌러서 펼치기/접기', onclick: () => { S.briefOpen = !S.briefOpen; render(); } }),
-    h('div', { class: 'slots-head' },
-      h('span', null, h('i', { class: 'en' }, 'KEY FACTS'), `키워드 ${d.needFound}/${d.need}`, bonusN ? h('span', { class: 'b' }, ` · 보너스 ${d.bonus}/${bonusN}`) : null),
-      canGuess ? h('button', { class: 'btn primary guess-btn', type: 'button', disabled: S.busy || d.guessing, onclick: guessSheet }, d.guessing ? '채점 중…' : d.capped ? '최종 답안 제출' : '진상 제출') : null),
-    h('div', { class: 'slots' }, slots),
-    here.length ? h('div', { class: 'here' }, h('span', { class: 'faces' }, here.slice(0, 6).map(x => h('img', { src: who(x.id).av, alt: '' }))),
-      `${here.slice(0, 3).map(x => who(x.id).name).join(', ')}${here.length > 3 ? ` 외 ${here.length - 3}명` : ''}이 보고 있어요`) : null));
-
-  // 증거 줄: 현장 사진 · 단서 #1~3 · 점수판 · 더보기 — 한 줄, 누르면 팝업
-  const clueOf = i => (rv.clues || []).find(c => c.i === i);
-  const ranks = kind === 'versus' ? rankFor(pid) : [];
-  const clueBtns = d.clues.map(c => {
-    const got = clueOf(c.i);
-    return h('button', { class: 'cb-item cb-clue' + (c.open ? ' open' : ' locked') + (fresh.has(c.id) ? ' fresh' : ''), type: 'button',
-      'aria-label': c.open ? `단서 #${c.i + 1} 보기` : `단서 #${c.i + 1} · ${c.at}문에 열려요`,
-      onclick: () => (c.open ? openClue(got || { i: c.i }, got?.text) : lockedClue(c)) },
-      c.open && got?.img ? h('img', { src: got.img, alt: '', loading: 'lazy' }) : h('i', { class: 'cb-ico', 'aria-hidden': 'true' }, c.open ? '!' : '🔒'),
-      h('span', { class: 'cb-t' }, h('b', null, `단서 #${c.i + 1}`), h('small', null, c.open ? (c.bought ? '긴급 열람' : '열림') : `${c.at}문에 열림`)));
-  });
-  put($('#caseBar'),
-    h('button', { class: 'cb-item cb-photo' + (heat >= 68 ? ' hot' : ''), type: 'button', onclick: openZoom, 'aria-label': '현장 사진과 메모 보기' },
-      p.photo ? h('img', { src: p.photo, alt: '' }) : null,
-      h('span', { class: 'cb-t' }, h('b', null, '현장 사진'), h('small', null, `메모 ${(p.spots || []).length}개`))),
-    clueBtns,
-    kind === 'versus' ? h('button', { class: 'cb-item cb-btn', type: 'button', onclick: () => rankSheet(pid) },
-      h('span', { class: 'cb-t' }, h('b', null, '점수판'), h('small', null, `${ranks.length}명`))) : null,
-    look ? null : h('button', { class: 'cb-item cb-btn', type: 'button', 'aria-label': '더보기: 질문 끝내기 · 포기 · 식탁 치우기', onclick: () => moreSheet(pid) },
-      h('span', { class: 'cb-t' }, h('b', null, '⋯'), h('small', null, '더보기'))));
+    h('div', { class: 'kw' }, h('span', null, `키워드 ${d.need}개`), bonusN ? h('span', { class: 'bonus' }, `보너스 ${bonusN}개 (−${BONUS}문)`) : null,
+      h('span', { class: 'plain' }, `찾음 ${d.needFound}/${d.need}`), h('span', { class: 'note' }, '키워드 전부 + 인과관계를 맞혀야 정답')),
+    h('div', { class: 'slots' }, slots)));
+  $('#deskN').replaceChildren(h('b', { text: d.total }), h('span', null, '문'));
   if (rv.clues?.length || Object.keys(rv.facts || {}).length) fresh.forEach(x => seenOpen.add(x));
 
   put($('#botBanner'), d.over ? null : botBanner());
@@ -1003,7 +1045,7 @@ function verdictEl(pid, d, rv, kind, look) {
         h('img', { src: who(c.id).av, alt: '' }), `${who(c.id).name} · 질문 ${c.q} · 키워드 ${c.f}`, c.id === mvp ? h('b', null, 'MVP') : null))) : null);
   }
 
-  const next = [...PUZZLES.slice(no + 1), ...PUZZLES.slice(0, no)].find(q => !dOf(q.id, kind).over);
+  const next = p.custom ? null : [...PUZZLES.slice(no + 1), ...PUZZLES.slice(0, no)].find(q => !dOf(q.id, kind).over);
   const actions = look ? null : h('div', { class: 'v-actions' },
     h('p', { class: 'count' }, versus ? '동점이면 키워드를 더 찾은 순, 그다음 먼저 끝낸 순' : '결과 공유는 진상을 담지 않아요'),
     h('div', { class: 'row' },
@@ -1036,7 +1078,7 @@ function verdictEl(pid, d, rv, kind, look) {
     h('div', { class: 'truth-card' },
       p.photo ? h('img', { class: 'truth-photo', src: p.photo, alt: `${p.title} 사건 사진`, loading: 'lazy' }) : null,
       h('div', { class: 'truth-in' },
-        h('p', { class: 'v-round' }, `CASE FILE ${num(no)} · ${p.title}`),
+        h('p', { class: 'v-round' }, `CASE FILE ${noOf(p)} · ${p.title}`),
         h('h4', { text: p.story }),
         h('p', { class: 'v-lbl' }, `정답 기준 ${d.need}`),
         h('div', { class: 'crit-chips' }, p.facts.filter(f => f.need && rv.facts?.[f.id]).map(f => chip(f, hits[f.id] === 'hit'))),
@@ -1076,7 +1118,11 @@ function verdictEl(pid, d, rv, kind, look) {
     h('div', { class: 'row' }, [['easy', '쉬움'], ['ok', '적당'], ['hard', '어려움']].map(([v, t]) =>
       h('button', { class: 'chip', type: 'button', 'aria-pressed': String(mine === v), onclick: () => react('rate', { value: v }) }, t, cnt(v) ? h('b', null, ` ${cnt(v)}`) : null))));
 
-  return h('section', { class: 'verdict ' + (solved ? 'v-solved' : 'v-cold') }, head, board, actions, ladder, truth, hl, trailSec, table, rate,
+  const stars = p.custom ? h('section', { class: 'v-sec v-stars' },
+    h('p', { class: 'v-lbl' }, h('span', null, '별점 · 창작마당 순위에 반영돼요'), h('span', null, p.rating_n ? `평균 ★ ${avgOf(p).toFixed(1)} · ${p.rating_n}명` : '아직 별점이 없어요')),
+    p.mine ? h('p', { class: 'count' }, '내가 만든 사건에는 별점을 줄 수 없어요.')
+      : h('div', { class: 'stars-pick', role: 'group', 'aria-label': '별점' }, [1, 2, 3, 4, 5].map(n => h('button', { class: 'star' + (n <= (p.my_rating || 0) ? ' on' : ''), type: 'button', 'aria-label': `별 ${n}개`, onclick: () => rateCustom(p.id, n) }, '★')))) : null;
+  return h('section', { class: 'verdict ' + (solved ? 'v-solved' : 'v-cold') }, head, board, actions, stars, ladder, truth, hl, trailSec, table, rate,
     versus && !look ? h('p', { class: 'v-watch' }, '관전 모드 · 내 기록은 동결됐어요. 점수판의 지켜보기로 다른 수사관의 수사를 볼 수 있어요.') : null);
 }
 
@@ -1142,8 +1188,13 @@ function syncComposer(d) {
   else if (d.capped && !d.over) { help = `질문이 마감됐어요. 문제 카드의 최종 답안 제출만 남았어요 · 틀리면 +${FAIL}문`; block = true; }
   else if (d.guessing) { help = '제출한 진상을 채점하는 중이에요…'; block = true; }
   ta.disabled = block; btn.disabled = block || S.busy;
-  ta.placeholder = d.capped ? '질문이 마감됐어요' : '네 · 아니오로 답할 수 있게 물어 보세요 (누가·왜·어떻게는 반려)';
-  btn.textContent = S.busy ? '…' : '묻기';
+  ta.placeholder = d.capped ? '질문이 마감됐어요' : '예/아니오로 답할 수 있는 질문을 입력…';
+  btn.textContent = S.busy ? '보내는 중…' : '질문하기';
+  const gb = $('#guessBtn');
+  $('#guessRow').hidden = watching() || !!d.over;
+  gb.disabled = S.busy || d.guessing;
+  gb.textContent = d.guessing ? '채점 중…' : d.capped ? '최종 답안 제출하기' : '정답 제출하기';
+  $('#guessHint').textContent = d.capped ? `마지막 기회 · 틀리면 +${FAIL}문` : `오답 +${WRONG}문 · 키워드 ${d.need}개 + 인과관계`;
   $('#composer').hidden = watching() || !!d.over;
   $('#compHelp').textContent = help;
   $('#compErr').textContent = S.err || '';
@@ -1155,8 +1206,17 @@ function renderTyping() {
 // 의논 창 (함께 풀기만): 오른쪽 아래 버튼으로 열고 닫는다. 입력칸은 다시 그리지 않아 쓰던 글이 남는다.
 function renderTalk() {
   const pid = S.caseId;
-  const show = S.view === 'table' && !!pid && !!S.room && playing() === 'coop';
-  $('#talk').hidden = !show;
+  const show = S.view === 'table' && !!pid && !!S.room;
+  const panel = $('#talkPanel'), dock = $('#talkDock');
+  const docked = show && !narrow();
+  // 넓은 화면: 왼쪽 아래 칸에 늘 펼쳐 둔다 / 좁은 화면: 오른쪽 아래 버튼으로 연다
+  if (docked && panel.parentElement !== dock) dock.append(panel);
+  if (!docked && panel.parentElement !== $('#talk')) $('#talk').prepend(panel);
+  if (docked) S.talkOpen = true;
+  $('#talk').hidden = !show || docked;
+  dock.hidden = !docked;
+  $('#talkTitle').textContent = playing() === 'versus' ? '로비 채팅' : '의논';
+  $('#talkSub').textContent = playing() === 'versus' ? '정보를 거래하라, 혹은 속여라 · 출제자는 듣지 않아요' : '출제자는 듣지 않고 문수에도 안 들어가요';
   if (!show) return;
   const chats = logsOf(pid, 'coop').filter(x => x.kind === 'chat');
   if (S.talkSeen[pid] == null || S.talkOpen) S.talkSeen[pid] = chats.length;
@@ -1165,6 +1225,7 @@ function renderTalk() {
   $('#talkFab').setAttribute('aria-expanded', String(S.talkOpen));
   $('#talkFab').classList.toggle('on', S.talkOpen);
   $('#talkBadge').textContent = unread > 0 ? String(unread) : '';
+  for (const el of document.querySelectorAll('.talk-unread')) el.textContent = unread > 0 ? `새 글 ${unread}` : '열기';
   if (!S.talkOpen) return;
   const list = $('#talkList');
   const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 40;
@@ -1176,9 +1237,224 @@ function renderTalk() {
   if (atBottom || S.talkJump) { list.scrollTop = list.scrollHeight; S.talkJump = false; }
 }
 function toggleTalk(open = !S.talkOpen) {
+  if (!narrow()) return;
   S.talkOpen = open; S.talkJump = open;
   renderTalk();
   if (open) $('#talkInput').focus();
+}
+
+/* ---------- 창작마당: 사람들이 만든 사건 ---------- */
+// 공개 정보만 서버에서 받아 P 에 섞는다 (진상 · 키워드 문장은 서버에만 있다)
+const noOf = p => (p.custom ? '창작' : num(PUZZLES.indexOf(p)));
+const avgOf = p => (p.rating_n ? p.rating_sum / p.rating_n : 0);
+// 인기: 별점(적은 표는 3.5점 쪽으로 당긴 평균) + 플레이 수
+const bayesOf = p => (3 * 3.5 + p.rating_sum) / (3 + p.rating_n);
+const popOf = p => bayesOf(p) + 0.25 * Math.log2(1 + p.plays);
+let customAt = 0;
+async function loadCustom(force) {
+  if (!force && Date.now() - customAt < 20000) return;
+  customAt = Date.now();
+  try {
+    const { items } = await api('custom_list');
+    for (const it of items) P[it.id] = { ...it, custom: true, spots: [] };
+    S.custom = items.map(it => it.id);
+    scheduleRender();
+  } catch { customAt = 0; }
+}
+const customList = () => (S.custom || []).map(id => P[id]).filter(Boolean);
+async function rateCustom(pid, stars) {
+  try {
+    const { card } = await api('custom_rate', { puzzle: pid, stars });
+    P[pid] = { ...P[pid], ...card, custom: true, spots: [] };
+    render();
+  } catch (e) { S.err = errText(e.code); render(); }
+}
+async function hideCustom(pid, hide) {
+  try {
+    const { card } = await api('custom_hide', { puzzle: pid, hide });
+    P[pid] = { ...P[pid], ...card, custom: true, spots: [] };
+    render();
+  } catch (e) { S.err = errText(e.code); render(); }
+}
+function customCard(p) {
+  const d = S.room ? dOf(p.id, 'coop') : null;
+  const avg = avgOf(p);
+  const status = !d ? h('span', { class: 'pill' }, '방에 들어가면 열려요')
+    : d.over === 'solved' ? h('span', { class: 'pill done' }, `함께 해결 · ${d.total}문`)
+    : d.over ? h('span', { class: 'pill' }, '함께 · 진상 공개됨')
+    : d.L.some(e => e.kind !== 'chat') ? h('span', { class: 'pill live' }, `함께 ${d.n}문 · 키워드 ${d.needFound}/${d.need}`)
+    : h('span', { class: 'pill' }, '아직 아무도 안 앉음');
+  const open = () => openCase(p.id);
+  return h('div', { class: 'case-card ugc', role: 'button', tabindex: '0', onclick: open, onkeydown: e => { if (e.key === 'Enter') open(); } },
+    h('div', { class: 'thumb ugc-thumb' },
+      h('span', { class: 'no' }, '창작'), h('span', { class: 'ugc-title', text: p.title }), h('span', { class: 'ugc-by', text: `출제 · ${p.author_name || '손님'}` }),
+      d?.over ? h('span', { class: 'closed' + (d.over === 'solved' ? '' : ' fail') }, d.over === 'solved' ? '사건 종결' : '미제 처리') : null),
+    h('div', { class: 'body' },
+      h('h3', { text: p.title }),
+      h('p', { class: 'teaser', text: p.story }),
+      h('p', { class: 'ugc-stats' },
+        h('span', { class: 'stars' }, p.rating_n ? `★ ${avg.toFixed(1)}` : '★ –'), h('span', null, `별점 ${p.rating_n}`),
+        h('span', null, `플레이 ${p.plays}`), h('span', null, `해결 ${p.solves}`)),
+      p.mine ? h('div', { class: 'mine-row' },
+        h('span', { class: 'pill' + (p.status === 'public' ? ' live' : '') }, p.status === 'public' ? '공개 중' : '숨김'),
+        h('button', { class: 'flag', type: 'button', onclick: e => { e.stopPropagation(); hideCustom(p.id, p.status === 'public'); } }, p.status === 'public' ? '숨기기' : '다시 공개')) : null,
+      h('div', { class: 'foot' }, bowls(p.level), status)));
+}
+
+/* ---------- 문제 만들기 ---------- */
+const DRAFT_KEY = 'soup.draft';
+const NEED_RANGE = { 1: [2, 4], 2: [3, 5], 3: [4, 6] };
+const NEED_REC = { 1: 3, 2: 4, 3: 5 };
+const blankFact = () => ({ label: '', check: '' });
+const blankDraft = () => ({ title: '', level: 2, tags: [], story: '', truth: '', need: [blankFact(), blankFact(), blankFact(), blankFact()], bonus: [blankFact()], clues: ['', '', ''], canon: [], review: null });
+// 글자 두 개씩 묶어 겹침을 잰다 (tools/check-puzzles.mjs 와 같은 방식)
+const bigrams = s => { const t = String(s || '').replace(/[^가-힣a-zA-Z0-9]/g, ''); const g = new Set(); for (let i = 0; i < t.length - 1; i++) g.add(t.slice(i, i + 2)); return g; };
+const trigrams = s => { const t = String(s || '').replace(/[^가-힣a-zA-Z0-9]/g, ''); const g = new Set(); for (let i = 0; i < t.length - 2; i++) g.add(t.slice(i, i + 3)); return g; };
+const shareOf = (a, b) => [...a].filter(x => b.has(x)).length;
+function draftChecks(dr) {
+  const errs = [], warns = [];
+  const len = s => [...String(s || '').trim()].length;
+  const need = dr.need.filter(f => f.label.trim()), bonus = dr.bonus.filter(f => f.label.trim());
+  if (len(dr.title) < 2) errs.push('제목을 2자 이상 적어 주세요.');
+  if (len(dr.story) < 20) errs.push('이야기(문제)를 20자 이상 적어 주세요.');
+  if (len(dr.truth) < 80) errs.push('진상을 80자 이상, 이야기 속 이상한 점이 모두 풀리게 적어 주세요.');
+  const [lo, hi] = NEED_RANGE[dr.level];
+  if (need.length < lo || need.length > hi) errs.push(`별 ${dr.level}개는 필수 키워드가 ${lo}~${hi}개여야 해요 (권장 ${NEED_REC[dr.level]}개). 지금 ${need.length}개.`);
+  else if (need.length < NEED_REC[dr.level]) warns.push(`별 ${dr.level}개는 필수 키워드 ${NEED_REC[dr.level]}개를 권장해요.`);
+  const story = bigrams(dr.story);
+  const all = [...need.map((f, i) => ({ ...f, n: `필수 ${i + 1}` })), ...bonus.map((f, i) => ({ ...f, n: `보너스 ${i + 1}` }))];
+  for (const f of all) {
+    if (len(f.label) < 5) errs.push(`${f.n}: 키워드를 5자 이상 구체적으로 적어 주세요.`);
+    const g = bigrams(f.label);
+    const leak = g.size ? shareOf(g, story) / g.size : 0;
+    if (leak >= 0.6) errs.push(`${f.n}: 이야기만 읽어도 드러나는 내용이에요. 숨은 사실을 키워드로 삼아 주세요.`);
+    else if (leak >= 0.45) warns.push(`${f.n}: 이야기와 많이 겹쳐요.`);
+  }
+  for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+    const a = bigrams(all[i].label), b = bigrams(all[j].label);
+    const jac = a.size && b.size ? shareOf(a, b) / new Set([...a, ...b]).size : 0;
+    if (jac >= 0.3) errs.push(`${all[i].n}·${all[j].n}: 두 키워드가 거의 같은 말이에요. 한 고리에 한 사실만 담아 주세요.`);
+    else if (shareOf(trigrams(all[i].label), trigrams(all[j].label))) warns.push(`${all[i].n}·${all[j].n}: 같은 낱말을 써요. 같은 것을 두 번 묻는지 확인해 주세요.`);
+  }
+  dr.clues.forEach((c, i) => {
+    if (!c.trim()) return;
+    const cg = bigrams(c);
+    for (const f of need) { const g = bigrams(f.label); if (g.size && shareOf(g, cg) / g.size >= 0.5) errs.push(`단서 #${i + 1}이 키워드를 거의 그대로 말해요. 방향만 가리키게 바꿔 주세요.`); }
+  });
+  if (!dr.clues.some(c => c.trim())) warns.push('단서가 없어요. 15·30·45문에 열릴 단서를 넣으면 막힌 사람이 덜 지쳐요.');
+  return { errs: [...new Set(errs)], warns: [...new Set(warns)] };
+}
+const draftPayload = dr => ({
+  title: dr.title.trim(), level: dr.level, story: dr.story.trim(), truth: dr.truth.trim(),
+  facts: [...dr.need.filter(f => f.label.trim()).map(f => ({ label: f.label.trim(), check: f.check.trim(), need: true })),
+    ...dr.bonus.filter(f => f.label.trim()).map(f => ({ label: f.label.trim(), check: f.check.trim(), need: false }))],
+  clues: dr.clues.map(c => c.trim()).filter(Boolean), canon: dr.canon || []
+});
+function openMaker() {
+  const box = $('#maker');
+  const dr = S.draft = { ...blankDraft(), ...(lsGet(DRAFT_KEY, null) || {}) };
+  let checksEl, reviewEl, needEl, bonusEl, levelEl, publishBtn, reviewBtn;
+  const save = () => { lsSet(DRAFT_KEY, dr); renderChecks(); };
+  const close = () => { box.hidden = true; box.replaceChildren(); document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape' && !$('#sheetRoot').childElementCount) close(); };
+  document.addEventListener('keydown', onKey);
+  const text = (obj, key, ph, max, rows) => {
+    const el = rows ? h('textarea', { class: 'field', rows, maxlength: max, placeholder: ph }) : h('input', { class: 'field', type: 'text', maxlength: max, placeholder: ph });
+    el.value = obj[key] || '';
+    el.addEventListener('input', () => { obj[key] = el.value; if (dr.review) dr.review.stale = true; save(); });
+    return el;
+  };
+  const field = (label, hint, ...kids) => h('div', { class: 'mk-field' }, h('p', { class: 'mk-lbl' }, h('b', null, label), hint ? h('small', null, hint) : null), ...kids);
+  const factRows = (list, kind) => {
+    const wrap = h('div', { class: 'mk-facts' });
+    const draw = () => put(wrap, list.map((f, i) => h('div', { class: 'mk-fact' },
+      h('span', { class: 'mk-n' }, kind === 'need' ? `★${i + 1}` : `+${i + 1}`),
+      h('div', { class: 'mk-fact-in' },
+        text(f, 'label', kind === 'need' ? '숨은 사실 한 문장 (예: 그는 15년 전 이 가게에서 아들을 잃었다)' : '알면 더 재밌는 숨은 사실', 60),
+        text(f, 'check', '채점 기준 (선택): 무엇을 말해야 맞힌 걸로 칠지', 200)),
+      h('button', { class: 'mk-x', type: 'button', 'aria-label': '이 키워드 빼기', onclick: () => { list.splice(i, 1); draw(); save(); } }, '✕'))),
+      h('button', { class: 'btn ghost small', type: 'button', disabled: list.length >= (kind === 'need' ? 6 : 2), onclick: () => { list.push(blankFact()); draw(); save(); } }, kind === 'need' ? '＋ 필수 키워드' : '＋ 보너스 키워드'));
+    draw();
+    return wrap;
+  };
+  function renderChecks() {
+    const { errs, warns } = draftChecks(dr);
+    put(checksEl,
+      h('p', { class: 'mk-lbl' }, h('b', null, '규칙 검사'), h('small', null, errs.length ? `고칠 것 ${errs.length}` : '통과')),
+      errs.length || warns.length ? h('ul', { class: 'mk-list' }, errs.map(t => h('li', { class: 'err' }, t)), warns.map(t => h('li', { class: 'warn' }, t)))
+        : h('p', { class: 'mk-ok' }, '기계적인 규칙은 모두 통과했어요. AI 검수로 반전과 공정성을 확인해 보세요.'));
+    publishBtn.disabled = !!errs.length;
+    reviewBtn.disabled = !!errs.length;
+    const rv = dr.review;
+    put(reviewEl, rv ? [
+      h('p', { class: 'mk-lbl' }, h('b', null, 'AI 검수'), h('small', null, rv.stale ? '글을 고쳐서 다시 검수하면 좋아요' : `출제자 메모 ${dr.canon.length}개 준비됨`)),
+      h('p', { class: 'mk-score' + (rv.score >= 7 ? ' good' : rv.score >= 5 ? '' : ' bad') }, h('b', null, `${rv.score}`), ' / 10 ', rv.score >= 7 ? '올려도 좋은 수준이에요' : '조금 더 다듬어 보세요'),
+      rv.issues.length ? h('ul', { class: 'mk-list' }, rv.issues.map(x => h('li', { class: 'warn' }, x.msg))) : h('p', { class: 'mk-ok' }, '지적할 점이 없어요.')
+    ] : h('p', { class: 'mk-lbl' }, h('b', null, 'AI 검수'), h('small', null, '반전 · 공정성 · 키워드 겹침을 보고 판정용 출제자 메모를 만들어 줘요')));
+  }
+  async function review() {
+    reviewBtn.disabled = true; reviewBtn.textContent = '검수하는 중…';
+    try {
+      const out = await api('custom_review', draftPayload(dr));
+      dr.review = { score: out.score, issues: out.issues };
+      dr.canon = out.canon;
+      // 비어 있는 채점 기준은 AI가 만든 것으로 채운다
+      dr.need.filter(f => f.label.trim()).forEach((f, i) => { if (!f.check.trim() && out.checks['f' + (i + 1)]) f.check = out.checks['f' + (i + 1)]; });
+      dr.bonus.filter(f => f.label.trim()).forEach((f, i) => { if (!f.check.trim() && out.checks['b' + (i + 1)]) f.check = out.checks['b' + (i + 1)]; });
+      lsSet(DRAFT_KEY, dr);
+      close(); openMaker();
+      $('#maker .mk-review')?.scrollIntoView({ block: 'center' });
+    } catch (e) {
+      reviewBtn.textContent = 'AI 검수';
+      sheet('검수하지 못했어요', errText(e.code), '확인', () => {});
+    } finally { if (reviewBtn.isConnected) { reviewBtn.disabled = false; reviewBtn.textContent = 'AI 검수'; renderChecks(); } }
+  }
+  async function publish() {
+    const go = async () => {
+      publishBtn.disabled = true; publishBtn.textContent = '올리는 중…';
+      try {
+        const { id, card } = await api('custom_publish', draftPayload(dr));
+        P[id] = { ...card, custom: true, spots: [] };
+        S.custom = [id, ...(S.custom || [])];
+        lsSet(DRAFT_KEY, null);
+        close();
+        S.arc.src = 'custom'; S.arc.cf = 'mine'; saveArc(); render();
+        sheet('창작마당에 올렸어요', `「${card.title}」이 공개됐어요. 방 사람들과 풀어 보고, 다른 사람들이 별점을 매기면 인기순에 올라가요.`, '확인', () => {});
+      } catch (e) {
+        publishBtn.disabled = false; publishBtn.textContent = '창작마당에 올리기';
+        sheet('올리지 못했어요', errText(e.code), '확인', () => {});
+      }
+    };
+    if (!dr.review || dr.review.stale) sheet('AI 검수 없이 올릴까요?', '검수하면 반전과 공정성을 점검하고, 판정을 안정시키는 출제자 메모를 만들어 줘요. 그래도 바로 올릴 수 있어요.', '그대로 올리기', go);
+    else go();
+  }
+  levelEl = h('div', { class: 'seg', role: 'group', 'aria-label': '난이도' }, [1, 2, 3].map(n => h('button', { type: 'button', 'aria-pressed': String(dr.level === n), onclick: () => { dr.level = n; for (const b of levelEl.children) b.setAttribute('aria-pressed', String(b.textContent === '★'.repeat(n))); save(); } }, '★'.repeat(n))));
+  needEl = factRows(dr.need, 'need'); bonusEl = factRows(dr.bonus, 'bonus');
+  checksEl = h('div', { class: 'mk-checks' }); reviewEl = h('div', { class: 'mk-review' });
+  reviewBtn = h('button', { class: 'btn', type: 'button', onclick: review }, 'AI 검수');
+  publishBtn = h('button', { class: 'btn primary', type: 'button', onclick: publish }, '창작마당에 올리기');
+  put(box,
+    h('div', { class: 'result-top' },
+      h('button', { class: 'back', type: 'button', onclick: close }, '←', h('span', null, ' 닫기')),
+      h('span', { class: 'rt' }, h('i', { class: 'en' }, 'NEW CASE'), '문제 만들기'),
+      h('button', { class: 'talk-x', type: 'button', 'aria-label': '닫기', onclick: close }, '✕')),
+    h('div', { class: 'result-scroll' }, h('div', { class: 'maker-in' },
+      h('p', { class: 'mk-intro' }, '좋은 바다거북 수프는 ', h('b', null, '이상한 결과'), '를 보여 주고, 진상은 ', h('b', null, '뜻밖이지만 완전히 말이 되는 이유'), '로 풀려요. 키워드는 진상을 이루는 숨은 고리로, 이야기만 읽어선 알 수 없어야 해요. 적는 내용은 이 기기에 자동 저장돼요.'),
+      field('제목', '2~30자', text(dr, 'title', '예) 창가의 국수 한 그릇', 30)),
+      field('난이도', '별이 많을수록 필수 키워드가 많아요', levelEl),
+      field('이야기 (문제)', '플레이어가 처음 보는 이상한 상황. 원인이나 정체를 드러내는 말은 빼 주세요.', text(dr, 'story', '예) 작은 국숫집 사장은 15년 동안 문을 닫을 때마다 창가 자리에 국수 한 그릇을 차려 놓았다…', 400, 4)),
+      field('진상', '이야기 속 이상한 점이 모두 풀리게. 플레이어에게는 다 풀면 공개돼요.', text(dr, 'truth', '무슨 일이 있었는지 처음부터 끝까지', 2000, 7)),
+      field('필수 키워드', '정답으로 인정받으려면 모두 맞혀야 하는 숨은 사실. 서로 겹치지 않게 한 고리에 한 사실.', needEl),
+      field('보너스 키워드', '찾으면 −3문. 없어도 돼요.', bonusEl),
+      field('단서 3개', '15·30·45문에 하나씩 열려요. 키워드를 직접 말하지 말고 방향만 가리켜 주세요.',
+        h('div', { class: 'mk-clues' }, dr.clues.map((c, i) => { const el = h('input', { class: 'field', type: 'text', maxlength: 160, placeholder: `단서 #${i + 1}` }); el.value = c; el.addEventListener('input', () => { dr.clues[i] = el.value; save(); }); return el; }))),
+      checksEl, reviewEl,
+      h('div', { class: 'row mk-actions' },
+        h('button', { class: 'btn ghost', type: 'button', onclick: () => sheet('처음부터 다시 쓸까요?', '지금 적은 내용이 모두 지워져요.', '모두 지우기', () => { lsSet(DRAFT_KEY, null); close(); openMaker(); }) }, '새로 쓰기'),
+        reviewBtn, publishBtn))));
+  box.hidden = false;
+  renderChecks();
+  box.querySelector('input')?.focus();
 }
 
 /* ---------- 결과 페이지 (등수 · 등급 해설 · 진상 해설) ---------- */
@@ -1255,7 +1531,7 @@ function modeSheet(pid) {
   const pick = (m, close) => { close(); S.play = m; lsSet('soup.play', m); enterCase(pid); };
   let first;
   sheetShell('진행 방식 고르기', close => h('div', { class: 'sheet mode-sheet', role: 'dialog', 'aria-modal': 'true' },
-    h('p', { class: 'v-round' }, `CASE FILE ${num(PUZZLES.indexOf(p))}`),
+    h('p', { class: 'v-round' }, `CASE FILE ${noOf(p)}`),
     h('h3', { text: p.title }),
     h('p', null, '어떻게 풀까요?'),
     h('div', { class: 'mode-pick' },
@@ -1286,11 +1562,17 @@ function start() {
   qIn.addEventListener('input', () => { S.arc.q = qIn.value; saveArc(); renderHome(); });
   sortIn.addEventListener('change', () => { S.arc.sort = sortIn.value; saveArc(); renderHome(); });
   $('#roomChip').addEventListener('click', roomSheet);
+  for (const b of $('#srcTabs').querySelectorAll('[data-src]')) b.addEventListener('click', () => { S.arc.src = b.dataset.src; saveArc(); if (S.arc.src === 'custom') loadCustom(true); render(); });
+  $('#makeBtn').addEventListener('click', openMaker);
+  loadCustom(true);
+  setInterval(() => { if (S.view === 'home' && S.arc.src === 'custom') loadCustom(); }, 60000);
   for (const b of $('#playSeg').querySelectorAll('button')) b.addEventListener('click', () => setPlay(b.dataset.play));
   $('#composer').addEventListener('submit', e => { e.preventDefault(); submitDraft(); });
   const ta = $('#draft');
   ta.addEventListener('input', () => { if (ta.value.trim()) setTyping(true); });
   $('#talkFab').addEventListener('click', () => toggleTalk());
+  $('#guessBtn').addEventListener('click', guessSheet);
+  addEventListener('resize', () => { if (S.view === 'table') { if (narrow()) S.talkOpen = false; scheduleRender(); } });
   $('#talkClose').addEventListener('click', () => toggleTalk(false));
   $('#talkForm').addEventListener('submit', e => { e.preventDefault(); submitTalk(); });
   const tk = $('#talkInput');
@@ -1305,6 +1587,6 @@ function start() {
 
   const [hRoom, hCase] = (location.hash || '').slice(1).toLowerCase().split('/');
   const target = /^[a-z0-9]{4}$/.test(hRoom || '') ? hRoom : lsGet('soup.room', null);
-  if (target) joinRoom(target, true).then(ok => { if (ok && hCase && P[hCase]) enterCase(hCase); });
+  if (target) joinRoom(target, true).then(async ok => { if (!ok || !hCase) return; if (!P[hCase] && /^u-/.test(hCase)) await loadCustom(true); if (P[hCase]) enterCase(hCase); });
 }
 start();
