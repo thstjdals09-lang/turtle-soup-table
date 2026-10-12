@@ -5,6 +5,7 @@ export const CAP = 50;              // 질문 마감 문수
 export const CLUE_AT = [15, 30, 45]; // 단서가 열리는 문수
 export const WRONG = 5;             // 오답
 export const FAIL = 25;             // 포기 · 최종 실패
+export const RELIEF = 15;           // 미해결 벌점 감면 한도: 낸 답안에서 인정된 만큼 (맞힘 1 · 방향만 0.5)
 export const BONUS = 3;             // 보너스 키워드
 export const BUY = 10;              // 긴급 단서 열람
 export const STALE_MS = 150000;     // 이만큼 답이 없으면 다시 묻기 허용
@@ -24,7 +25,10 @@ export function derive(meta, list) {
   const marks = new Map();       // 기록 id → 그 뒤에 열린 단서 번호들
   const boughtIdx = new Set();   // 긴급 열람한 단서 번호
   const qNo = new Map();
-  let over = null, overEv = null, n = 0, q = 0, rej = 0, wrong = 0, bought = 0, ended = false;
+  let over = null, overEv = null, n = 0, q = 0, rej = 0, wrong = 0, bought = 0, ended = false, best = 0, relief = 0;
+  const needs = facts.filter(f => f.need);
+  const credit = hits => needs.length ? needs.reduce((a, f) => a + (hits?.[f.id] === 'hit' ? 1 : hits?.[f.id] === 'partial' ? 0.5 : 0), 0) / needs.length : 0;
+  const fail = () => { relief = Math.round(RELIEF * best); n += FAIL - relief; };
   const cross = (before, after, id) => CLUE_AT.forEach((t, i) => {
     if (i < clueN && before < t && after >= t && !boughtIdx.has(i)) {
       if (!marks.has(id)) marks.set(id, []);
@@ -47,11 +51,12 @@ export function derive(meta, list) {
     } else if (e.kind === 'guess' && e.status === 'done') {
       // 틀린 제출은 몇 개 맞혔는지만 알려 주고 키워드는 열지 않는다 (가설을 여러 번 던져 키워드를 캐내지 못하게)
       if (e.ok) for (const [f, v] of Object.entries(e.hits || {})) if (v === 'hit' && ids.has(f) && !revealed.has(f)) revealed.set(f, { by: e.player, at: e.created_at, via: 'guess', ev: e.id });
+      if (!e.ok) best = Math.max(best, credit(e.hits));
       if (e.ok) { over = 'solved'; overEv = e; }
-      else if (e.final) { over = 'failed'; overEv = e; n += FAIL; }
+      else if (e.final) { over = 'failed'; overEv = e; fail(); }
       else { wrong++; n += WRONG; }
     } else if (e.kind === 'giveup') {
-      over = 'gaveup'; overEv = e; n += FAIL;
+      over = 'gaveup'; overEv = e; fail();
     }
     if (!over) cross(before, n, e.id);
   }
@@ -65,7 +70,7 @@ export function derive(meta, list) {
   const open = new Set([...revealed.keys(), ...clues.filter(c => c.open).map(c => c.id)]);
   if (over) facts.forEach(f => open.add(f.id));
   return {
-    L, revealed, marks, qNo, over, overEv, n, total: Math.max(0, n - BONUS * bonus), q, rej, wrong, bought, bonus,
+    L, revealed, marks, qNo, over, overEv, n, relief, credit: Math.round(RELIEF * best), total: Math.max(0, n - BONUS * bonus), q, rej, wrong, bought, bonus,
     need, needFound, clues, open, nextClue: clues.find(c => !c.open), ended,
     capped: !over && (n >= CAP || ended),
     guessing: L.some(e => e.kind === 'guess' && e.status === 'pending')

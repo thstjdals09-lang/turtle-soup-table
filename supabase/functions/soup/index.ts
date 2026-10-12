@@ -67,6 +67,8 @@ async function handle(b: Row) {
     case "custom_hide": return customHide(b);
     case "custom_rate": return customRate(b);
     case "custom_review": return customReview(b);
+    case "custom_report": return customReport(b);
+    case "custom_get": return customGet(b);
     case "reveal": return reveal(b);
     case "clear": return clear(b);
     case "seed": return seed(b);
@@ -397,13 +399,25 @@ async function rate(b: Row) {
 // 진상 · 키워드 문장 · 단서는 그대로 비밀이고, custom_list 는 공개 정보(제목 · 이야기 · 키워드 칸 수 · 별점 · 플레이 수)만 내보낸다.
 const CUSTOM_RE = /^u-[a-z0-9]{6}$/;
 const NEED_RANGE: Record<number, [number, number]> = { 1: [2, 4], 2: [3, 5], 3: [4, 6] };
+const REPORT_LIMIT = 3; // 신고가 이만큼 쌓이면 공개를 멈추고 검토로 돌린다
+const REPORT_WHY = ["copy", "unfit", "judge", "broken"];
 function publicCard(id: string, s: Row, player = "") {
   const r = Object.values(s.ratings || {}) as number[];
+  const j = Object.values(s.judge || {}) as number[];
+  const mine = !!player && s.author === player;
   return {
-    id, title: s.title, story: s.story, level: s.level, tags: s.tags || [], author_name: s.author_name, mine: !!player && s.author === player,
+    id, title: s.title, story: s.story, level: s.level, tags: s.tags || [], author_name: s.author_name, mine,
     status: s.status, facts: (s.facts || []).map((f: Row) => ({ id: f.id, need: f.need })), clues: (s.clues || []).length,
     plays: s.plays || 0, solves: s.solves || 0, rating_n: r.length, rating_sum: r.reduce((a, x) => a + x, 0),
-    my_rating: player ? s.ratings?.[player] || 0 : 0, created_at: s.created_at,
+    judge_n: j.length, judge_sum: j.reduce((a, x) => a + x, 0), has_memo: !!s.memo,
+    my_rating: player ? s.ratings?.[player] || 0 : 0, my_judge: player ? s.judge?.[player] || 0 : 0,
+    my_note: player ? s.notes?.[player]?.t || "" : "", my_report: player ? s.reports?.[player] || "" : "",
+    created_at: s.created_at, updated_at: s.updated_at || "", rev: s.rev || 1,
+    // 한 줄 후기와 신고 사유는 만든 사람에게만 (손질할 곳을 찾으라고)
+    ...(mine ? {
+      notes: Object.values(s.notes || {}).sort((a: Row, b: Row) => String(b.at).localeCompare(String(a.at))).slice(0, 50),
+      reports: Object.values(s.reports || {}).reduce((m: Row, w) => ({ ...m, [w as string]: (m[w as string] || 0) + 1 }), {}),
+    } : {}),
   };
 }
 async function customList(b: Row) {
@@ -439,7 +453,9 @@ function readDraft(b: Row) {
     .map(([q, a]: unknown[]) => [str(q, 120), str(a, 80)])
     .filter(([q, a]: string[]) => q && /^(네|아니오|관계없음|애매함)/.test(a));
   const tags = (Array.isArray(b.tags) ? b.tags : []).map((t: unknown) => str(t, 12)).filter(Boolean).slice(0, 4);
-  return { level, title, story, truth, facts, clues, canon, tags };
+  // 판정 메모: 판정관만 보는 사실 정리 ("아닌 것", 헷갈리는 말의 뜻, 정답에 필요 없는 세부)
+  const memo = str(b.memo, 800);
+  return { level, title, story, truth, facts, clues, canon, tags, memo };
 }
 async function customRow(id: string) {
   if (!CUSTOM_RE.test(id)) throw new Fail("bad_puzzle");
@@ -457,6 +473,15 @@ async function customSave(id: string, s: Row) {
 async function customPublish(b: Row) {
   const { player, name } = who(b);
   const draft = readDraft(b);
+  // 고쳐 올리기: 같은 id 를 그대로 두고 내용만 바꾼다 (별점 · 플레이 수 · 후기는 남는다)
+  if (b.edit !== undefined) {
+    const id = str(b.edit, 40);
+    const s = await customRow(id);
+    if (s.author !== player) throw new Fail("not_yours");
+    const next = { ...s, ...draft, author_name: name, updated_at: now(), rev: (s.rev || 1) + 1 };
+    await customSave(id, next);
+    return { id, card: publicCard(id, next, player) };
+  }
   const { data: rows, error } = await db.from("soup_secrets").select("data").like("puzzle", "u-%").limit(2000);
   if (error) throw error;
   const day = Date.now() - 86400000;
@@ -476,23 +501,72 @@ async function customHide(b: Row) {
   const id = str(b.puzzle, 40);
   const s = await customRow(id);
   if (s.author !== player) throw new Fail("not_yours");
-  s.status = b.hide ? "hidden" : "public";
+  if (s.status === "review" && !b.hide) throw new Fail("under_review");
+  s.status = b.hide ? (s.status === "review" ? "review" : "hidden") : "public";
   s.updated_at = now();
   await customSave(id, s);
   return { card: publicCard(id, s, player) };
 }
-async function customRate(b: Row) {
+// 만든 사람이 고치려고 자기 사건 원고를 불러온다
+async function customGet(b: Row) {
   const { player } = who(b);
   const id = str(b.puzzle, 40);
   const s = await customRow(id);
-  const stars = Math.round(Number(b.stars));
-  if (!(stars >= 1 && stars <= 5)) throw new Fail("bad_rate");
+  if (s.author !== player) throw new Fail("not_yours");
+  return {
+    draft: {
+      title: s.title, level: s.level, story: s.story, truth: s.truth, memo: s.memo || "", canon: s.canon || [],
+      facts: (s.facts || []).map((f: Row) => ({ label: f.label, check: f.check === f.label ? "" : f.check, need: f.need })),
+      clues: (s.clues || []).map((c: Row) => c.text || ""),
+    },
+  };
+}
+// 풀어 본 사람만 (만든 사람은 빼고) 평가 · 신고할 수 있다
+async function playedBy(id: string, s: Row, player: string) {
   if (s.author === player) throw new Fail("own_puzzle");
   const { count, error } = await db.from("soup_events").select("id", { count: "exact", head: true })
     .eq("puzzle", id).eq("player", player).in("kind", ["q", "guess", "giveup"]);
   if (error) throw error;
   if (!count) throw new Fail("not_played");
-  s.ratings = { ...(s.ratings || {}), [player]: stars };
+}
+const starOf = (v: unknown) => {
+  if (v === undefined || v === null) return null;
+  const n = Math.round(Number(v));
+  if (!(n >= 1 && n <= 5)) throw new Fail("bad_rate");
+  return n;
+};
+// 이야기 별점(stars) · 판정 만족(judge) · 한 줄 후기(note, 만든 사람만 봄) — 보낸 것만 바꾼다
+async function customRate(b: Row) {
+  const { player, name } = who(b);
+  const id = str(b.puzzle, 40);
+  const s = await customRow(id);
+  const stars = starOf(b.stars), judge = starOf(b.judge);
+  const note = b.note === undefined ? null : str(b.note, 200);
+  if (stars === null && judge === null && note === null) throw new Fail("bad_rate");
+  await playedBy(id, s, player);
+  if (stars !== null) s.ratings = { ...(s.ratings || {}), [player]: stars };
+  if (judge !== null) s.judge = { ...(s.judge || {}), [player]: judge };
+  if (note !== null) {
+    const notes = { ...(s.notes || {}) };
+    if (note) notes[player] = { t: note, name, at: now(), stars: s.ratings?.[player] || 0, judge: s.judge?.[player] || 0 };
+    else delete notes[player];
+    s.notes = notes;
+  }
+  await customSave(id, s);
+  return { card: publicCard(id, s, player) };
+}
+// 신고: 사유 하나, 다시 보내면 바뀐다. 쌓이면 공개를 멈춘다
+async function customReport(b: Row) {
+  const { player } = who(b);
+  const id = str(b.puzzle, 40);
+  const s = await customRow(id);
+  const why = str(b.why, 10);
+  if (why && !REPORT_WHY.includes(why)) throw new Fail("bad_reason");
+  await playedBy(id, s, player);
+  const reports = { ...(s.reports || {}) };
+  if (why) reports[player] = why; else delete reports[player];
+  s.reports = reports;
+  if (s.status === "public" && Object.keys(reports).length >= REPORT_LIMIT) { s.status = "review"; s.review_at = now(); }
   await customSave(id, s);
   return { card: publicCard(id, s, player) };
 }

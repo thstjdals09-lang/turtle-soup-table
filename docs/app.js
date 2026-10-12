@@ -3,7 +3,10 @@
 // 쓰기와 AI 판정은 모두 서버 함수 /functions/v1/soup 를 거친다.
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { PUZZLES } from './puzzles.js';
-import { CAP, CLUE_AT, WRONG, FAIL, BONUS, BUY, STALE_MS, derive, grade } from './rules.js';
+import { CAP, CLUE_AT, WRONG, FAIL, RELIEF, BONUS, BUY, STALE_MS, derive, grade } from './rules.js';
+// 포기 · 최종 실패 벌점: 지금까지 낸 답안에서 인정된 만큼 줄어든다
+const failCost = d => FAIL - (d.credit || 0);
+const reliefNote = d => (d.credit ? ` (낸 답안이 인정된 만큼 −${d.credit} 감면)` : ` (답안을 내 두면 인정된 만큼 최대 −${RELIEF} 감면)`);
 
 const SUPABASE_URL = 'https://yunhtdmtzyuojotzhhoe.supabase.co';
 // 공개용 anon 키. 데이터베이스 정책상 방과 기록을 읽는 것만 할 수 있다.
@@ -82,8 +85,10 @@ const ERR = {
   bad_fact_count: '난이도에 맞는 필수 키워드 수를 맞춰 주세요.',
   custom_limit: '사건은 하루에 5개까지 올릴 수 있어요.',
   not_yours: '내가 만든 사건만 바꿀 수 있어요.',
-  own_puzzle: '내가 만든 사건에는 별점을 줄 수 없어요.',
-  not_played: '사건을 풀어 본 뒤에 별점을 줄 수 있어요.',
+  own_puzzle: '내가 만든 사건은 평가하거나 신고할 수 없어요.',
+  not_played: '사건을 풀어 본 뒤에 평가하거나 신고할 수 있어요.',
+  under_review: '신고가 쌓여 검토 중인 사건이에요. 검토가 끝나야 다시 공개할 수 있어요.',
+  bad_reason: '신고 사유를 다시 골라 주세요.',
   bad_puzzle: '그런 사건이 없어요.',
   gemini_error: 'AI가 응답하지 못했어요. 잠시 뒤 다시 해 주세요.',
   refused: 'AI가 이 내용은 다루지 않겠다고 했어요. 표현을 바꿔 주세요.',
@@ -530,7 +535,7 @@ function guessSheet() {
     h('p', { class: 'v-round' }, final ? 'FINAL ANSWER · 최종 답안' : 'SUBMIT THE TRUTH · 진상 제출'),
     h('h3', null, final ? '마지막 추리를 적어 주세요' : '무슨 일이 있었는지 적어 주세요'),
     h('p', null, `처음부터 끝까지 이어지게 설명해 주세요. 키워드 ${d.need}개를 인과관계까지 담아야 해결돼요. `
-      + (final ? `질문이 끝나서 이번이 마지막 기회예요. 틀리면 +${FAIL}문으로 사건이 끝나요.` : `틀리면 +${WRONG}문이고, 키워드를 몇 개 맞혔는지만 알려 줘요.`)),
+      + (final ? `질문이 끝나서 이번이 마지막 기회예요. 틀리면 최대 +${failCost(d)}문으로 사건이 끝나요. 맞힌 만큼은 벌점이 줄어요.` : `틀리면 +${WRONG}문이고, 키워드를 몇 개 맞혔는지만 알려 줘요. 맞힌 만큼은 나중에 포기·실패 벌점에서 깎여요.`)),
     ta = h('textarea', { class: 'field', rows: 7, maxlength: 1200, placeholder: '예) 그 사람은 사실 …였다. 그래서 …했고, 그 때문에 …', oninput: keep }),
     h('div', { class: 'row' },
       h('button', { class: 'btn', type: 'button', onclick: () => { keep(); close(); } }, '닫기'),
@@ -538,7 +543,7 @@ function guessSheet() {
         const text = ta.value.trim(); if (!text) { ta.focus(); return; }
         close(); S.guessDraft = '';
         if (!(await act('guess', { text }))) S.guessDraft = text;
-      } }, final ? `최종 제출 · 틀리면 +${FAIL}문` : `제출 · 틀리면 +${WRONG}문`))), keep);
+      } }, final ? `최종 제출 · 틀리면 최대 +${failCost(d)}문` : `제출 · 틀리면 +${WRONG}문`))), keep);
   ta.value = S.guessDraft || ''; ta.focus();
 }
 const retry = x => act('retry', { id: x.id });
@@ -551,10 +556,12 @@ function buyClue() {
   sheet(`단서 #${c.i + 1}을 지금 열까요?`, `원래 ${c.at}문에 열리는 단서예요. 긴급 열람하면 문수가 ${d.n}문에서 ${d.n + BUY}문이 돼요.${playing() === 'coop' ? ' 방 전체에 열려요.' : ''} 등급에는 큰 손해예요.`, `+${BUY}문 내고 열기`, () => act('clue', {}));
 }
 function endQuestions() {
-  sheet('질문을 끝낼까요?', `더는 질문할 수 없고, 최종 답안 한 번만 남아요. 맞히면 지금 문수로 해결, 틀리면 +${FAIL}문으로 사건이 끝나요.${playing() === 'coop' ? ' 방 전체의 질문이 끝나요.' : ''}`, '질문 끝내기', () => act('end', {}));
+  const d = dOf(S.caseId);
+  sheet('질문을 끝낼까요?', `더는 질문할 수 없고, 최종 답안 한 번만 남아요. 맞히면 지금 문수로 해결, 틀리면 최대 +${failCost(d)}문으로 사건이 끝나요.${reliefNote(d)}${playing() === 'coop' ? ' 방 전체의 질문이 끝나요.' : ''}`, '질문 끝내기', () => act('end', {}));
 }
 function giveUp() {
-  sheet('포기하고 진상을 볼까요?', `+${FAIL}문이 붙고 사건이 끝나요. ${playing() === 'coop' ? '방 전체에 진상이 보여요. ' : ''}되돌릴 수 없어요.`, '포기하기', () => act('giveup', {}));
+  const d = dOf(S.caseId);
+  sheet('포기하고 진상을 볼까요?', `+${failCost(d)}문이 붙고 사건이 끝나요.${reliefNote(d)} ${playing() === 'coop' ? '방 전체에 진상이 보여요. ' : ''}되돌릴 수 없어요.`, '포기하기', () => act('giveup', {}));
 }
 function clearCase() {
   const msg = playing() === 'versus' ? '이 사건의 내 따로 풀기 기록을 지우고 처음부터 시작해요.' : '이 사건의 함께 풀기 기록을 모두 지워요. 같은 방 사람들의 질문도 사라져요.';
@@ -635,7 +642,7 @@ function moreSheet(pid) {
     h('h3', null, '수사 정리'),
     h('div', { class: 'more-list' },
       !d.over && !d.capped ? h('button', { class: 'btn', type: 'button', onclick: () => { close(); endQuestions(); } }, '질문 끝내기 · 최종 추리로') : null,
-      !d.over ? h('button', { class: 'btn ghost warn', type: 'button', onclick: () => { close(); giveUp(); } }, `포기하고 진상 보기 · +${FAIL}문`) : null,
+      !d.over ? h('button', { class: 'btn ghost warn', type: 'button', onclick: () => { close(); giveUp(); } }, `포기하고 진상 보기 · +${failCost(d)}문`) : null,
       d.L.length && (kind === 'versus' || S.host === me) ? h('button', { class: 'btn ghost', type: 'button', onclick: () => { close(); clearCase(); } }, '식탁 치우기 · 이 사건 기록 지우기') : null,
       first = h('button', { class: 'btn', type: 'button', onclick: close }, '닫기'))));
   first.focus();
@@ -965,7 +972,7 @@ function titleOf(d) {
 const gClass = g => 'g-' + ({ '…': 'live' }[g] || g.toLowerCase());
 function costLine(d) {
   return [`질문 ${d.q}회 (+${d.q})`, d.bought ? `긴급 단서 (+${d.bought})` : null, d.wrong ? `오답 ${d.wrong}회 (+${d.wrong * WRONG})` : null,
-    d.over === 'failed' ? `최종 실패 (+${FAIL})` : d.over === 'gaveup' ? `포기 (+${FAIL})` : null,
+    d.over === 'failed' ? `최종 실패 (+${FAIL - d.relief}${d.relief ? `, 인정 −${d.relief}` : ''})` : d.over === 'gaveup' ? `포기 (+${FAIL - d.relief}${d.relief ? `, 인정 −${d.relief}` : ''})` : null,
     d.bonus ? `보너스 ${d.bonus}개 (−${BONUS * d.bonus})` : null].filter(Boolean).join(' · ');
 }
 // 추천 · 체감 난이도 (끝난 뒤의 반응이라 관전 중에도 할 수 있다)
@@ -1003,6 +1010,22 @@ function hlCard(cls, label, no, x, note) {
     h('div', { class: 'hl-who' }, h('span', null, h('b', { text: x.name || who(x.player).name }), ' 이(가) 물었다'), stamp(x.answer)),
     note ? h('p', { class: 'hl-note' }, note) : null,
     h('div', { class: 'hl-act' }, likeBtn(x)));
+}
+// 창작 사건 평가: 이야기 재미 · 판정 만족 별점, 한 줄 후기(출제자만 봄), 신고
+function customRateSec(p) {
+  const pick = (val, key, label, sub) => h('div', { class: 'rate-line' },
+    h('span', { class: 'rl' }, h('b', null, label), h('small', null, sub)),
+    h('div', { class: 'stars-pick', role: 'group', 'aria-label': label }, [1, 2, 3, 4, 5].map(n => h('button', { class: 'star' + (n <= val ? ' on' : ''), type: 'button', 'aria-label': `${label} ${n}점`, onclick: () => rateCustom(p.id, { [key]: n }) }, '★'))));
+  const sum = p.rating_n || p.judge_n ? `이야기 ★ ${avgOf(p).toFixed(1)} · 판정 ★ ${judgeAvg(p).toFixed(1)} · ${Math.max(p.rating_n, p.judge_n)}명` : '아직 평가가 없어요';
+  const head = h('p', { class: 'v-lbl' }, h('span', null, '이 창작 사건, 어땠나요? · 창작마당 순위에 반영돼요'), h('span', null, sum));
+  if (p.mine) return h('section', { class: 'v-sec v-stars' }, head,
+    h('p', { class: 'count' }, '내가 만든 사건은 평가할 수 없어요. '), h('button', { class: 'btn small', type: 'button', onclick: () => feedbackSheet(p) }, '받은 후기 보기'));
+  return h('section', { class: 'v-sec v-stars' }, head,
+    pick(p.my_rating || 0, 'stars', '이야기 재미', '반전이 놀라웠나요'),
+    pick(p.my_judge || 0, 'judge', '판정 만족', '네·아니오가 정확했나요'),
+    h('div', { class: 'row rate-more' },
+      h('button', { class: 'btn small', type: 'button', onclick: () => noteSheet(p) }, p.my_note ? '내 후기 고치기' : '한 줄 후기 남기기'),
+      h('button', { class: 'flag', type: 'button', onclick: () => reportSheet(p) }, p.my_report ? `신고함 · ${REPORT_TEXT[p.my_report] || ''}` : '신고')));
 }
 function verdictEl(pid, d, rv, kind, look) {
   const p = P[pid], no = PUZZLES.indexOf(p);
@@ -1061,7 +1084,7 @@ function verdictEl(pid, d, rv, kind, look) {
     h('p', { class: 'v-lbl' }, h('span', null, '등급 해설'), h('span', null, `${whose} · ${myG}`)),
     h('div', { class: 'ladder' }, GRADES.map(([g, n, r, t]) => h('div', { class: 'rung ' + gClass(g) + (n === myG ? ' on' : '') },
       h('b', null, g), h('span', { class: 'rn' }, n), h('span', { class: 'rr' }, r), h('span', { class: 'rt' }, t)))),
-    h('p', { class: 'crit-note' }, `최종 문수 = 질문 수 + 긴급 단서 ${BUY} + 오답 ${WRONG} + 포기·최종 실패 ${FAIL} − 보너스 키워드 ${BONUS}. 적을수록 높은 등급이에요. ${solved ? `이번 기록은 ${d.total}문이라 「${myG}」이에요.` : ''}`));
+    h('p', { class: 'crit-note' }, `최종 문수 = 질문 수 + 긴급 단서 ${BUY} + 오답 ${WRONG} + 포기·최종 실패 ${FAIL}(낸 답안이 인정된 만큼 최대 −${RELIEF}) − 보너스 키워드 ${BONUS}. 적을수록 높은 등급이에요. ${solved ? `이번 기록은 ${d.total}문이라 「${myG}」이에요.` : ''}`));
   const vault = h('details', { class: 'vault', open: S.vault ? true : null, ontoggle: e => { S.vault = e.currentTarget.open; } },
     h('summary', null, h('span', { class: 'v-lbl' }, '단서 보관함'), h('b', null, `${d.clues.length}개`),
       unseen.length ? h('span', { class: 'tag found' }, `미공개 ${unseen.length}개 해금`) : null, h('span', { class: 'v-open' }, '펼쳐 보기')),
@@ -1119,10 +1142,7 @@ function verdictEl(pid, d, rv, kind, look) {
     h('div', { class: 'row' }, [['easy', '쉬움'], ['ok', '적당'], ['hard', '어려움']].map(([v, t]) =>
       h('button', { class: 'chip', type: 'button', 'aria-pressed': String(mine === v), onclick: () => react('rate', { value: v }) }, t, cnt(v) ? h('b', null, ` ${cnt(v)}`) : null))));
 
-  const stars = p.custom ? h('section', { class: 'v-sec v-stars' },
-    h('p', { class: 'v-lbl' }, h('span', null, '별점 · 창작마당 순위에 반영돼요'), h('span', null, p.rating_n ? `평균 ★ ${avgOf(p).toFixed(1)} · ${p.rating_n}명` : '아직 별점이 없어요')),
-    p.mine ? h('p', { class: 'count' }, '내가 만든 사건에는 별점을 줄 수 없어요.')
-      : h('div', { class: 'stars-pick', role: 'group', 'aria-label': '별점' }, [1, 2, 3, 4, 5].map(n => h('button', { class: 'star' + (n <= (p.my_rating || 0) ? ' on' : ''), type: 'button', 'aria-label': `별 ${n}개`, onclick: () => rateCustom(p.id, n) }, '★')))) : null;
+  const stars = p.custom ? customRateSec(p) : null;
   return h('section', { class: 'verdict ' + (solved ? 'v-solved' : 'v-cold') }, head, board, actions, stars, ladder, truth, hl, trailSec, table, rate,
     versus && !look ? h('p', { class: 'v-watch' }, '관전 모드 · 내 기록은 동결됐어요. 점수판의 지켜보기로 다른 수사관의 수사를 볼 수 있어요.') : null);
 }
@@ -1160,7 +1180,7 @@ function entry(pid, x, d, kind, rv) {
     return h('li', { class: cls }, av, head(n ? h('span', { class: 'qn' }, `Q${n}`) : null), h('div', { class: 'side' }, side), h('p', { class: 'qt', text: x.body }), meta.length ? h('div', { class: 'meta' }, meta) : null);
   }
   if (x.kind === 'clue') return h('li', { class: cls + ' e-sys e-clue' }, av, head(), h('p', { class: 'qt', text: `단서 #${(+x.clue_i || 0) + 1}을 긴급 열람했어요 · +${BUY}문` }));
-  if (x.kind === 'giveup') return h('li', { class: cls + ' e-sys' }, av, head(), h('p', { class: 'qt', text: `포기하고 진상을 열었어요 · +${FAIL}문` }));
+  if (x.kind === 'giveup') return h('li', { class: cls + ' e-sys' }, av, head(), h('p', { class: 'qt', text: `포기하고 진상을 열었어요 · +${FAIL - d.relief}문${d.relief ? ` (인정 −${d.relief})` : ''}` }));
   if (x.kind === 'end') return h('li', { class: cls + ' e-sys' }, av, head(), h('p', { class: 'qt', text: '질문을 끝냈어요 · 이제 최종 답안 한 번만 남았어요' }));
   if (x.kind === 'chat') return h('li', { class: cls + ' e-chat' }, av, head(h('span', { class: 'qn' }, '의논')), h('p', { class: 'qt', text: x.body }));
   if (x.kind === 'guess') {
@@ -1170,7 +1190,7 @@ function entry(pid, x, d, kind, rv) {
       const hit = facts.filter(f => f.need && x.hits?.[f.id] === 'hit').length;
       const part = facts.filter(f => f.need && x.hits?.[f.id] === 'partial').length;
       side = stamp(x.ok ? '네' : '아니오');
-      meta.push(h('span', { class: 'tag' + (x.ok ? ' found' : '') }, x.ok ? '정답이에요!' : `키워드 ${d.need}개 중 ${hit}개 맞힘${part ? ` · ${part}개는 방향만 맞음` : ''} · ${x.final ? `+${FAIL}문` : `+${WRONG}문`}`));
+      meta.push(h('span', { class: 'tag' + (x.ok ? ' found' : '') }, x.ok ? '정답이에요!' : `키워드 ${d.need}개 중 ${hit}개 맞힘${part ? ` · ${part}개는 방향만 맞음` : ''} · ${x.final ? `+${FAIL - d.relief}문` : `+${WRONG}문`}`));
       for (const f of facts) if (x.hits?.[f.id] === 'hit' && d.revealed.get(f.id)?.ev === x.id) meta.push(h('span', { class: 'tag found' }, (f.need ? '★ 키워드 발견: ' : '+ 보너스 키워드: ') + label(f.id)));
     } else side = x.status === 'error' || (stale && !waitBot) ? h('span', { class: 'stamp pend' }, '채점 실패') : h('span', { class: 'stamp pend' }, h('span', { class: 'dots' }, waitBot ? '출제자 기다리는 중' : '채점 중'));
     if (errTag) meta.push(errTag);
@@ -1186,7 +1206,7 @@ function syncComposer(d) {
   const ta = $('#draft'); const btn = $('#sendBtn');
   let help = '', block = false;
   if (watching()) { help = '관전 중에는 질문할 수 없어요.'; block = true; }
-  else if (d.capped && !d.over) { help = `질문이 마감됐어요. 문제 카드의 최종 답안 제출만 남았어요 · 틀리면 +${FAIL}문`; block = true; }
+  else if (d.capped && !d.over) { help = `질문이 마감됐어요. 최종 답안 제출만 남았어요 · 틀리면 최대 +${failCost(d)}문`; block = true; }
   else if (d.guessing) { help = '제출한 진상을 채점하는 중이에요…'; block = true; }
   ta.disabled = block; btn.disabled = block || S.busy;
   ta.placeholder = d.capped ? '질문이 마감됐어요' : '예/아니오로 답할 수 있는 질문을 입력…';
@@ -1195,7 +1215,7 @@ function syncComposer(d) {
   $('#guessRow').hidden = watching() || !!d.over;
   gb.disabled = S.busy || d.guessing;
   gb.textContent = d.guessing ? '채점 중…' : d.capped ? '최종 답안 제출하기' : '정답 제출하기';
-  $('#guessHint').textContent = d.capped ? `마지막 기회 · 틀리면 +${FAIL}문` : `오답 +${WRONG}문 · 키워드 ${d.need}개 + 인과관계`;
+  $('#guessHint').textContent = d.capped ? `마지막 기회 · 틀리면 최대 +${failCost(d)}문` : `오답 +${WRONG}문 · 키워드 ${d.need}개 + 인과관계`;
   $('#composer').hidden = watching() || !!d.over;
   $('#compHelp').textContent = help;
   $('#compErr').textContent = S.err || '';
@@ -1248,9 +1268,16 @@ function toggleTalk(open = !S.talkOpen) {
 // 공개 정보만 서버에서 받아 P 에 섞는다 (진상 · 키워드 문장은 서버에만 있다)
 const noOf = p => (p.custom ? '창작' : num(PUZZLES.indexOf(p)));
 const avgOf = p => (p.rating_n ? p.rating_sum / p.rating_n : 0);
-// 인기: 별점(적은 표는 3.5점 쪽으로 당긴 평균) + 플레이 수
-const bayesOf = p => (3 * 3.5 + p.rating_sum) / (3 + p.rating_n);
+const judgeAvg = p => (p.judge_n ? p.judge_sum / p.judge_n : 0);
+// 별점: 표가 적으면 3.5점 쪽으로 당긴 평균. 이야기 재미 0.65 + 판정 만족 0.35
+const pull = (sum, n) => (3 * 3.5 + (sum || 0)) / (3 + (n || 0));
+const bayesOf = p => 0.65 * pull(p.rating_sum, p.rating_n) + 0.35 * pull(p.judge_sum, p.judge_n);
+// 인기: 별점 + 플레이 수
 const popOf = p => bayesOf(p) + 0.25 * Math.log2(1 + p.plays);
+// 시범: 올라온 지 2주 안이고 아직 10판이 안 된 사건 / 평점 높음: 평가 5개 이상, 이야기 ★4.2 이상
+const isFresh = p => p.plays < 10 && Date.now() - tms(p.created_at) < 14 * 864e5;
+const isTop = p => p.rating_n >= 5 && avgOf(p) >= 4.2;
+const REPORT_TEXT = { copy: '다른 데서 베낀 문제', unfit: '부적절한 내용', judge: '판정이 자꾸 틀림', broken: '진상이 앞뒤가 안 맞음' };
 let customAt = 0;
 async function loadCustom(force) {
   if (!force && Date.now() - customAt < 20000) return;
@@ -1263,19 +1290,80 @@ async function loadCustom(force) {
   } catch { customAt = 0; }
 }
 const customList = () => (S.custom || []).map(id => P[id]).filter(Boolean);
-async function rateCustom(pid, stars) {
+const putCard = (pid, card) => { P[pid] = { ...P[pid], ...card, custom: true, spots: [] }; render(); };
+// body: { stars } 이야기 재미 · { judge } 판정 만족 · { note } 한 줄 후기
+async function rateCustom(pid, body) {
   try {
-    const { card } = await api('custom_rate', { puzzle: pid, stars });
-    P[pid] = { ...P[pid], ...card, custom: true, spots: [] };
-    render();
+    const { card } = await api('custom_rate', { puzzle: pid, ...body });
+    putCard(pid, card);
+    if (body.note) toast('후기를 보냈어요. 출제자만 볼 수 있어요.');
   } catch (e) { S.err = errText(e.code); render(); }
+}
+async function reportCustom(pid, why) {
+  try {
+    const { card } = await api('custom_report', { puzzle: pid, why });
+    putCard(pid, card);
+    toast(why ? '신고했어요. 신고가 모이면 공개를 멈추고 검토해요.' : '신고를 거뒀어요.');
+  } catch (e) { S.err = errText(e.code); render(); }
+}
+function noteSheet(p) {
+  let ta;
+  sheetShell('한 줄 후기', close => h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' },
+    h('h3', null, '한 줄 후기'),
+    h('p', null, '출제자만 볼 수 있어요. 어디가 재밌었는지, 어느 판정이 이상했는지 적어 주면 사건을 다듬는 데 써요.'),
+    ta = h('textarea', { class: 'field', rows: 3, maxlength: 200, placeholder: '예) 반전은 좋았는데 "혼자였나요?"에 네라고 해서 헷갈렸어요' }),
+    h('div', { class: 'row' },
+      p.my_note ? h('button', { class: 'btn ghost', type: 'button', onclick: () => { close(); rateCustom(p.id, { note: '' }); } }, '후기 지우기') : null,
+      h('button', { class: 'btn', type: 'button', onclick: close }, '닫기'),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => { const t = ta.value.trim(); if (!t) { ta.focus(); return; } close(); rateCustom(p.id, { note: t }); } }, '보내기'))));
+  ta.value = p.my_note || ''; ta.focus();
+}
+function reportSheet(p) {
+  sheetShell('신고하기', close => h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' },
+    h('h3', null, '이 사건을 신고할까요?'),
+    h('p', null, '풀어 본 사람들의 신고가 3건 모이면 공개를 멈추고 검토해요. 사유를 하나 골라 주세요.'),
+    h('div', { class: 'more-list' },
+      Object.entries(REPORT_TEXT).map(([k, t]) => h('button', { class: 'btn' + (p.my_report === k ? ' primary' : ''), type: 'button', onclick: () => { close(); reportCustom(p.id, k); } }, t)),
+      p.my_report ? h('button', { class: 'btn ghost', type: 'button', onclick: () => { close(); reportCustom(p.id, ''); } }, '신고 거두기') : null,
+      h('button', { class: 'btn ghost', type: 'button', onclick: close }, '닫기'))));
+}
+// 만든 사람이 보는 받은 평가 · 후기 · 신고
+function feedbackSheet(p) {
+  const notes = p.notes || [], reps = Object.entries(p.reports || {});
+  sheetShell('받은 후기', close => h('div', { class: 'sheet fb-sheet', role: 'dialog', 'aria-modal': 'true' },
+    h('h3', { text: `「${p.title}」 받은 평가` }),
+    h('p', { class: 'fb-sum' }, `이야기 ★ ${avgOf(p).toFixed(1)} (${p.rating_n}명) · 판정 만족 ★ ${judgeAvg(p).toFixed(1)} (${p.judge_n}명) · 플레이 ${p.plays} · 해결 ${p.solves}`),
+    reps.length ? h('p', { class: 'fb-rep' }, '신고 · ' + reps.map(([k, n]) => `${REPORT_TEXT[k] || k} ${n}`).join(' · ')) : null,
+    notes.length ? h('ul', { class: 'fb-list' }, notes.map(n => h('li', null,
+      h('p', { class: 'fb-who' }, h('b', { text: n.name || '손님' }), h('small', null, [n.stars ? `이야기 ★${n.stars}` : null, n.judge ? `판정 ★${n.judge}` : null, n.at ? new Date(n.at).toLocaleDateString('ko-KR') : null].filter(Boolean).join(' · '))),
+      h('p', { text: n.t })))) : h('p', { class: 'fb-sum' }, '아직 받은 한 줄 후기가 없어요.'),
+    h('p', { class: 'fb-tip' }, '판정 만족이 낮으면 고쳐 올리기에서 판정 메모("아닌 것", 헷갈리는 말의 뜻)를 보강해 보세요. 별점과 플레이 수는 그대로 남아요.'),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); editCustom(p.id); } }, '고쳐 올리기'),
+      h('button', { class: 'btn primary', type: 'button', onclick: close }, '닫기'))));
+}
+async function editCustom(pid) {
+  const cur = lsGet(DRAFT_KEY, null);
+  if (cur && cur.edit !== pid && (cur.title || cur.story || cur.truth) && !editCustom.ok) {
+    sheet('쓰던 원고가 있어요', '이 사건을 고치려고 불러오면 지금 쓰던 원고가 지워져요.', '불러오기', () => { editCustom.ok = true; editCustom(pid).finally(() => { editCustom.ok = false; }); });
+    return;
+  }
+  try {
+    const { draft } = await api('custom_get', { puzzle: pid });
+    const fact = f => ({ label: f.label || '', check: f.check || '' });
+    lsSet(DRAFT_KEY, {
+      ...blankDraft(), edit: pid, title: draft.title, level: draft.level, story: draft.story, truth: draft.truth, memo: draft.memo, canon: draft.canon,
+      need: draft.facts.filter(f => f.need).map(fact), bonus: draft.facts.filter(f => !f.need).map(fact),
+      clues: [0, 1, 2].map(i => draft.clues[i] || ''), review: null
+    });
+    openMaker();
+  } catch (e) { sheet('불러오지 못했어요', errText(e.code), '확인', () => {}); }
 }
 async function hideCustom(pid, hide) {
   try {
     const { card } = await api('custom_hide', { puzzle: pid, hide });
-    P[pid] = { ...P[pid], ...card, custom: true, spots: [] };
-    render();
-  } catch (e) { S.err = errText(e.code); render(); }
+    putCard(pid, card);
+  } catch (e) { sheet('바꾸지 못했어요', errText(e.code), '확인', () => {}); }
 }
 function customCard(p) {
   const d = S.room ? dOf(p.id, 'coop') : null;
@@ -1286,19 +1374,29 @@ function customCard(p) {
     : d.L.some(e => e.kind !== 'chat') ? h('span', { class: 'pill live' }, `함께 ${d.n}문 · 키워드 ${d.needFound}/${d.need}`)
     : h('span', { class: 'pill' }, '아직 아무도 안 앉음');
   const open = () => openCase(p.id);
+  const stop = fn => e => { e.stopPropagation(); fn(); };
+  const byAuthor = () => { S.arc.q = p.author_name || ''; S.arc.cf = 'pop'; saveArc(); const q = $('#arcSearch'); if (q) q.value = S.arc.q; render(); };
+  const badge = p.status === 'review' ? ['검토 중', 'rev'] : isTop(p) ? ['평점 높음', 'top'] : isFresh(p) ? ['NEW · 시범', 'new'] : p.rev > 1 ? ['개정판', 'fix'] : null;
+  const solveRate = p.plays >= 3 ? `해결률 ${Math.round((100 * p.solves) / p.plays)}%` : null;
+  const notes = (p.notes || []).length, reps = Object.values(p.reports || {}).reduce((a, n) => a + n, 0);
   return h('div', { class: 'case-card ugc', role: 'button', tabindex: '0', onclick: open, onkeydown: e => { if (e.key === 'Enter') open(); } },
     h('div', { class: 'thumb ugc-thumb' },
-      h('span', { class: 'no' }, '창작'), h('span', { class: 'ugc-title', text: p.title }), h('span', { class: 'ugc-by', text: `출제 · ${p.author_name || '손님'}` }),
+      h('span', { class: 'no' }, '창작'), badge ? h('span', { class: 'ugc-badge b-' + badge[1] }, badge[0]) : null,
+      h('span', { class: 'ugc-title', text: p.title }),
+      h('button', { class: 'ugc-by', type: 'button', title: '이 출제자의 사건만 보기', onclick: stop(byAuthor) }, `출제 · ${p.author_name || '손님'}`),
       d?.over ? h('span', { class: 'closed' + (d.over === 'solved' ? '' : ' fail') }, d.over === 'solved' ? '사건 종결' : '미제 처리') : null),
     h('div', { class: 'body' },
       h('h3', { text: p.title }),
       h('p', { class: 'teaser', text: p.story }),
       h('p', { class: 'ugc-stats' },
-        h('span', { class: 'stars' }, p.rating_n ? `★ ${avg.toFixed(1)}` : '★ –'), h('span', null, `별점 ${p.rating_n}`),
-        h('span', null, `플레이 ${p.plays}`), h('span', null, `해결 ${p.solves}`)),
+        h('span', { class: 'stars', title: '이야기 재미' }, p.rating_n ? `★ ${avg.toFixed(1)} (${p.rating_n})` : '★ –'),
+        p.judge_n ? h('span', { title: '판정 만족' }, `판정 ★ ${judgeAvg(p).toFixed(1)}`) : null,
+        h('span', null, `플레이 ${p.plays}`), solveRate ? h('span', null, solveRate) : h('span', null, `해결 ${p.solves}`)),
       p.mine ? h('div', { class: 'mine-row' },
-        h('span', { class: 'pill' + (p.status === 'public' ? ' live' : '') }, p.status === 'public' ? '공개 중' : '숨김'),
-        h('button', { class: 'flag', type: 'button', onclick: e => { e.stopPropagation(); hideCustom(p.id, p.status === 'public'); } }, p.status === 'public' ? '숨기기' : '다시 공개')) : null,
+        h('span', { class: 'pill' + (p.status === 'public' ? ' live' : p.status === 'review' ? ' warn' : '') }, p.status === 'public' ? '공개 중' : p.status === 'review' ? '검토 중' : '숨김'),
+        h('button', { class: 'flag', type: 'button', onclick: stop(() => feedbackSheet(p)) }, `받은 후기 ${notes}${reps ? ` · 신고 ${reps}` : ''}`),
+        h('button', { class: 'flag', type: 'button', onclick: stop(() => editCustom(p.id)) }, '고치기'),
+        p.status === 'review' ? null : h('button', { class: 'flag', type: 'button', onclick: stop(() => hideCustom(p.id, p.status === 'public')) }, p.status === 'public' ? '숨기기' : '다시 공개')) : null,
       h('div', { class: 'foot' }, bowls(p.level), status)));
 }
 
@@ -1307,7 +1405,7 @@ const DRAFT_KEY = 'soup.draft';
 const NEED_RANGE = { 1: [2, 4], 2: [3, 5], 3: [4, 6] };
 const NEED_REC = { 1: 3, 2: 4, 3: 5 };
 const blankFact = () => ({ label: '', check: '' });
-const blankDraft = () => ({ title: '', level: 2, tags: [], story: '', truth: '', need: [blankFact(), blankFact(), blankFact(), blankFact()], bonus: [blankFact()], clues: ['', '', ''], canon: [], review: null });
+const blankDraft = () => ({ title: '', level: 2, tags: [], story: '', truth: '', memo: '', need: [blankFact(), blankFact(), blankFact(), blankFact()], bonus: [blankFact()], clues: ['', '', ''], canon: [], review: null, edit: null });
 // 글자 두 개씩 묶어 겹침을 잰다 (tools/check-puzzles.mjs 와 같은 방식)
 const bigrams = s => { const t = String(s || '').replace(/[^가-힣a-zA-Z0-9]/g, ''); const g = new Set(); for (let i = 0; i < t.length - 1; i++) g.add(t.slice(i, i + 2)); return g; };
 const trigrams = s => { const t = String(s || '').replace(/[^가-힣a-zA-Z0-9]/g, ''); const g = new Set(); for (let i = 0; i < t.length - 2; i++) g.add(t.slice(i, i + 3)); return g; };
@@ -1343,18 +1441,20 @@ function draftChecks(dr) {
     for (const f of need) { const g = bigrams(f.label); if (g.size && shareOf(g, cg) / g.size >= 0.5) errs.push(`단서 #${i + 1}이 키워드를 거의 그대로 말해요. 방향만 가리키게 바꿔 주세요.`); }
   });
   if (!dr.clues.some(c => c.trim())) warns.push('단서가 없어요. 15·30·45문에 열릴 단서를 넣으면 막힌 사람이 덜 지쳐요.');
+  if (len(dr.memo) < 10) warns.push('판정 메모가 비어 있어요. 플레이어가 물을 만한 곁가지("공범이 있나요?" 같은)를 "아닌 것"으로 적어 두면 판정이 흔들리지 않아요. AI 검수가 줄을 제안해 줘요.');
   return { errs: [...new Set(errs)], warns: [...new Set(warns)] };
 }
 const draftPayload = dr => ({
   title: dr.title.trim(), level: dr.level, story: dr.story.trim(), truth: dr.truth.trim(),
   facts: [...dr.need.filter(f => f.label.trim()).map(f => ({ label: f.label.trim(), check: f.check.trim(), need: true })),
     ...dr.bonus.filter(f => f.label.trim()).map(f => ({ label: f.label.trim(), check: f.check.trim(), need: false }))],
-  clues: dr.clues.map(c => c.trim()).filter(Boolean), canon: dr.canon || []
+  clues: dr.clues.map(c => c.trim()).filter(Boolean), canon: dr.canon || [], memo: (dr.memo || '').trim(),
+  ...(dr.edit ? { edit: dr.edit } : {})
 });
 function openMaker() {
   const box = $('#maker');
   const dr = S.draft = { ...blankDraft(), ...(lsGet(DRAFT_KEY, null) || {}) };
-  let checksEl, reviewEl, needEl, bonusEl, levelEl, publishBtn, reviewBtn;
+  let checksEl, reviewEl, needEl, bonusEl, levelEl, publishBtn, reviewBtn, memoEl;
   const save = () => { lsSet(DRAFT_KEY, dr); renderChecks(); };
   const close = () => { box.hidden = true; box.replaceChildren(); document.removeEventListener('keydown', onKey); };
   const onKey = e => { if (e.key === 'Escape' && !$('#sheetRoot').childElementCount) close(); };
@@ -1390,14 +1490,21 @@ function openMaker() {
     put(reviewEl, rv ? [
       h('p', { class: 'mk-lbl' }, h('b', null, 'AI 검수'), h('small', null, rv.stale ? '글을 고쳐서 다시 검수하면 좋아요' : `출제자 메모 ${dr.canon.length}개 준비됨`)),
       h('p', { class: 'mk-score' + (rv.score >= 7 ? ' good' : rv.score >= 5 ? '' : ' bad') }, h('b', null, `${rv.score}`), ' / 10 ', rv.score >= 7 ? '올려도 좋은 수준이에요' : '조금 더 다듬어 보세요'),
-      rv.issues.length ? h('ul', { class: 'mk-list' }, rv.issues.map(x => h('li', { class: 'warn' }, x.msg))) : h('p', { class: 'mk-ok' }, '지적할 점이 없어요.')
-    ] : h('p', { class: 'mk-lbl' }, h('b', null, 'AI 검수'), h('small', null, '반전 · 공정성 · 키워드 겹침을 보고 판정용 출제자 메모를 만들어 줘요')));
+      rv.issues.length ? h('ul', { class: 'mk-list' }, rv.issues.map(x => h('li', { class: 'warn' }, x.msg))) : h('p', { class: 'mk-ok' }, '지적할 점이 없어요.'),
+      rv.memo?.length ? h('div', { class: 'mk-sugg' },
+        h('p', { class: 'mk-lbl' }, h('b', null, '판정 메모 제안'), h('small', null, '판정이 흔들릴 만한 곳을 못 박는 줄이에요')),
+        h('ul', { class: 'mk-list' }, rv.memo.map(t => h('li', { text: t }))),
+        h('button', { class: 'btn small', type: 'button', onclick: () => {
+          dr.memo = [(dr.memo || '').trim(), ...rv.memo.map(t => (t.startsWith('-') ? t : '- ' + t))].filter(Boolean).join('\n').slice(0, 800);
+          rv.memo = []; memoEl.value = dr.memo; save();
+        } }, '판정 메모에 모두 넣기')) : null
+    ] : h('p', { class: 'mk-lbl' }, h('b', null, 'AI 검수'), h('small', null, '반전 · 공정성 · 모순을 보고 판정 메모 줄과 출제자 메모를 만들어 줘요')));
   }
   async function review() {
     reviewBtn.disabled = true; reviewBtn.textContent = '검수하는 중…';
     try {
       const out = await api('custom_review', draftPayload(dr));
-      dr.review = { score: out.score, issues: out.issues };
+      dr.review = { score: out.score, issues: out.issues, memo: out.memo || [] };
       dr.canon = out.canon;
       // 비어 있는 채점 기준은 AI가 만든 것으로 채운다
       dr.need.filter(f => f.label.trim()).forEach((f, i) => { if (!f.check.trim() && out.checks['f' + (i + 1)]) f.check = out.checks['f' + (i + 1)]; });
@@ -1416,13 +1523,13 @@ function openMaker() {
       try {
         const { id, card } = await api('custom_publish', draftPayload(dr));
         P[id] = { ...card, custom: true, spots: [] };
-        S.custom = [id, ...(S.custom || [])];
+        if (!(S.custom || []).includes(id)) S.custom = [id, ...(S.custom || [])];
         lsSet(DRAFT_KEY, null);
         close();
         S.arc.src = 'custom'; S.arc.cf = 'mine'; saveArc(); render();
-        sheet('창작마당에 올렸어요', `「${card.title}」이 공개됐어요. 방 사람들과 풀어 보고, 다른 사람들이 별점을 매기면 인기순에 올라가요.`, '확인', () => {});
+        sheet(dr.edit ? '고친 내용을 올렸어요' : '창작마당에 올렸어요', dr.edit ? `「${card.title}」이 개정판으로 바뀌었어요. 별점과 플레이 수는 그대로예요.` : `「${card.title}」이 공개됐어요. 처음 10판은 "NEW · 시범" 표시가 붙고, 풀어 본 사람들의 별점과 판정 만족이 쌓이면 인기순에 올라가요.`, '확인', () => {});
       } catch (e) {
-        publishBtn.disabled = false; publishBtn.textContent = '창작마당에 올리기';
+        publishBtn.disabled = false; publishBtn.textContent = dr.edit ? '고친 내용 올리기' : '창작마당에 올리기';
         sheet('올리지 못했어요', errText(e.code), '확인', () => {});
       }
     };
@@ -1433,11 +1540,12 @@ function openMaker() {
   needEl = factRows(dr.need, 'need'); bonusEl = factRows(dr.bonus, 'bonus');
   checksEl = h('div', { class: 'mk-checks' }); reviewEl = h('div', { class: 'mk-review' });
   reviewBtn = h('button', { class: 'btn', type: 'button', onclick: review }, 'AI 검수');
-  publishBtn = h('button', { class: 'btn primary', type: 'button', onclick: publish }, '창작마당에 올리기');
+  publishBtn = h('button', { class: 'btn primary', type: 'button', onclick: publish }, dr.edit ? '고친 내용 올리기' : '창작마당에 올리기');
+  memoEl = text(dr, 'memo', '- 아닌 것: 독살 · 사고 아님, 공범 없음\n- "그녀"는 아내를 말한다\n- 병명 같은 세부는 정답에 필요 없다', 800, 4);
   put(box,
     h('div', { class: 'result-top' },
       h('button', { class: 'back', type: 'button', onclick: close }, '←', h('span', null, ' 닫기')),
-      h('span', { class: 'rt' }, h('i', { class: 'en' }, 'NEW CASE'), '문제 만들기'),
+      h('span', { class: 'rt' }, h('i', { class: 'en' }, dr.edit ? 'REVISION' : 'NEW CASE'), dr.edit ? '사건 고치기' : '문제 만들기'),
       h('button', { class: 'talk-x', type: 'button', 'aria-label': '닫기', onclick: close }, '✕')),
     h('div', { class: 'result-scroll' }, h('div', { class: 'maker-in' },
       h('p', { class: 'mk-intro' }, '좋은 바다거북 수프는 ', h('b', null, '이상한 결과'), '를 보여 주고, 진상은 ', h('b', null, '뜻밖이지만 완전히 말이 되는 이유'), '로 풀려요. 키워드는 진상을 이루는 숨은 고리로, 이야기만 읽어선 알 수 없어야 해요. 적는 내용은 이 기기에 자동 저장돼요.'),
@@ -1449,6 +1557,7 @@ function openMaker() {
       field('보너스 키워드', '찾으면 −3문. 없어도 돼요.', bonusEl),
       field('단서 3개', '15·30·45문에 하나씩 열려요. 키워드를 직접 말하지 말고 방향만 가리켜 주세요.',
         h('div', { class: 'mk-clues' }, dr.clues.map((c, i) => { const el = h('input', { class: 'field', type: 'text', maxlength: 160, placeholder: `단서 #${i + 1}` }); el.value = c; el.addEventListener('input', () => { dr.clues[i] = el.value; save(); }); return el; }))),
+      field('판정 메모 (비공개)', 'AI 판정관만 봐요. 한 줄에 하나씩 — "아닌 것", 헷갈리는 말의 뜻, 정답에 필요 없는 세부.', memoEl),
       checksEl, reviewEl,
       h('div', { class: 'row mk-actions' },
         h('button', { class: 'btn ghost', type: 'button', onclick: () => sheet('처음부터 다시 쓸까요?', '지금 적은 내용이 모두 지워져요.', '모두 지우기', () => { lsSet(DRAFT_KEY, null); close(); openMaker(); }) }, '새로 쓰기'),
@@ -1499,6 +1608,14 @@ async function checkUpdate() {
     if (versionSig == null) versionSig = sig;
     else if (sig !== versionSig) showUpdateToast();
   } catch {}
+}
+// 잠깐 보이고 사라지는 알림 (새 버전 알림 #toast 와 따로)
+let flashT = 0;
+function toast(msg) {
+  let el = $('#flash');
+  if (!el) { el = h('div', { id: 'flash', class: 'flash', role: 'status', 'aria-live': 'polite' }); document.body.append(el); }
+  el.textContent = msg; el.classList.add('on');
+  clearTimeout(flashT); flashT = setTimeout(() => el.classList.remove('on'), 2800);
 }
 function showUpdateToast() {
   const t = $('#toast');

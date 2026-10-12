@@ -1012,3 +1012,31 @@ body.in-table .composer{border-top:1px solid var(--line-soft);padding:10px 0 0}
   .soup-card .slot.open{flex:0 0 min(72%,260px)}
 }
 @media (max-width:900px){.guess-row .c-head b{display:none}.guess-row .c-head small{display:block}}
+
+/* ---------- 창작마당 2: 배지 · 평가 · 후기 · 신고 · 판정 메모 ---------- */
+.ugc-thumb{position:relative}
+.ugc-badge{position:absolute;right:10px;top:10px;font-family:var(--f-type);font-size:10.5px;letter-spacing:.08em;padding:3px 8px;border-radius:3px;border:1px solid var(--line);background:rgba(8,11,15,.8);color:var(--muted)}
+.ugc-badge.b-new{border-color:#2C4A60;color:var(--accent-strong)}
+.ugc-badge.b-top{border-color:#5A4A26;color:#F2D27A}
+.ugc-badge.b-fix{border-color:#2F4A36;color:#7FC79A}
+.ugc-badge.b-rev{border-color:#5A2724;color:#F0A39C}
+button.ugc-by{border:0;background:none;padding:2px 4px;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+button.ugc-by:hover{color:var(--accent-strong)}
+.mine-row{flex-wrap:wrap}
+.pill.warn{border-color:#5A2724;color:#F0A39C}
+.rate-line{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:6px 0}
+.rate-line .rl{display:flex;flex-direction:column;gap:2px}
+.rate-line .rl b{font-size:14px}
+.rate-line .rl small{font-size:12px;color:var(--faint)}
+.rate-more{justify-content:space-between;align-items:center;margin-top:6px}
+.fb-sheet{max-height:min(80vh,640px);overflow-y:auto}
+.fb-sum,.fb-tip{margin:0;font-size:13px;color:var(--muted);line-height:1.6}
+.fb-rep{margin:0;font-size:13px;color:#F0A39C}
+.fb-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.fb-list li{border:1px solid var(--line-soft);border-radius:8px;padding:10px 12px;background:#0B1016}
+.fb-list li p{margin:0;font-size:14px;line-height:1.55}
+.fb-who{display:flex;gap:8px;align-items:baseline;margin-bottom:4px!important}
+.fb-who small{font-family:var(--f-type);font-size:11px;color:var(--muted)}
+.mk-sugg{display:flex;flex-direction:column;gap:6px;align-items:flex-start;border-top:1px solid var(--line-soft);padding-top:10px;margin-top:4px}
+.flash{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom,0px));transform:translate(-50%,16px);opacity:0;pointer-events:none;z-index:80;background:#0F2232;border:1px solid var(--accent);border-radius:8px;padding:10px 16px;font-size:13.5px;color:#DDEEFA;box-shadow:0 20px 50px -10px rgba(0,0,0,.8);transition:opacity .2s,transform .2s;max-width:calc(100vw - 32px)}
+.flash.on{opacity:1;transform:translate(-50%,0)}
