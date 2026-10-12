@@ -168,11 +168,13 @@ async function enterRoom(code) {
     .on('presence', { event: 'sync' }, () => { S.peers = flatPresence(ch.presenceState()); scheduleRender(); })
     .subscribe(status => {
       S.conn = status;
-      if (status === 'SUBSCRIBED') { S.lastTrack = ''; track(); loadAll(); }
+      // 연결이 (다시) 붙으면 그 사이 놓친 기록을 한 번 더 읽는다
+      if (status === 'SUBSCRIBED') { S.lastTrack = ''; track(); if (S.loaded) loadAll(); }
       scheduleRender();
     });
   S.channel = ch;
   setHash();
+  loadAll();
 }
 function leaveRoom(silent) {
   if (S.channel) { try { sb.removeChannel(S.channel); } catch {} }

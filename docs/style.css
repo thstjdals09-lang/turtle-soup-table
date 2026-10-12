@@ -310,3 +310,4 @@ button.mode-chip{cursor:pointer;font-family:var(--f-ui)}
 .people img{width:22px;height:22px;border-radius:50%}
 .conn{font-size:12px;color:var(--muted)}
 .conn.bad{color:var(--no)}
+.ticks span{white-space:nowrap}
