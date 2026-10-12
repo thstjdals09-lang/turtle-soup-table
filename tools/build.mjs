@@ -24,7 +24,7 @@ for (const p of ALL) {
   if (p.secret.facts.filter(f => f.need).length < 3) throw new Error(p.id + ' 필수 키워드 3개 미만');
 }
 
-const pub = ALL.map(({ secret, art, starters, rewritten, ...p }) => {
+const pub = ALL.map(({ secret, art, starters, rewritten, tags, ...p }) => {   // 태그(죽음 있음 등)는 화면에 보이지 않게 뺀다
   const photo = existsSync(join(root, 'docs/img', p.id + '.jpg')) ? `img/${p.id}.jpg` : undefined;
   return {
     ...p,

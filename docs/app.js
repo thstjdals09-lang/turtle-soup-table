@@ -889,9 +889,10 @@ function renderTable() {
   // 문제 카드: 이야기 + 키워드 칸
   const slots = p.facts.map(f => {
     const r = d.revealed.get(f.id), open = !!r || !!d.over;
-    const label = open ? (rv.facts?.[f.id] || '…') : f.need ? '아직 밝혀지지 않은 키워드' : `보너스 · 찾으면 −${BONUS}문`;
+    const label = open ? (rv.facts?.[f.id] || '…') : f.need ? '미확인' : `보너스 −${BONUS}문`;
+    const tip = open ? label : f.need ? '아직 밝혀지지 않은 키워드' : `보너스 키워드 · 찾으면 −${BONUS}문`;
     return h('div', { class: 'slot' + (f.need ? '' : ' bonus') + (open ? ' open' : '') + (fresh.has(f.id) ? ' fresh' : ''),
-      title: label + (r ? ` · ${kind === 'versus' ? '' : who(r.by).name + '의 '}${r.via === 'guess' ? '진상 제출' : '질문'}로 밝혀짐` : '') },
+      title: tip + (r ? ` · ${kind === 'versus' ? '' : who(r.by).name + '의 '}${r.via === 'guess' ? '진상 제출' : '질문'}로 밝혀짐` : '') },
       h('span', { class: 'sn' }, f.need ? (open ? '★' : '?') : '+'), h('span', { class: 'st', text: label }));
   });
   put($('#soupArea'), h('article', { class: 'soup-card' + (S.briefOpen ? ' open' : '') },
