@@ -132,7 +132,7 @@ function avatar(seed, name) {
   const hue = [...String(seed || 'x')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
   const ch = [...String(name || '?')][0] || '?';
   const esc = ch.replace(/[<>&"']/g, '');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="16" fill="hsl(${hue},48%,58%)"/><text x="16" y="21.5" font-size="15" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="#fff">${esc}</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="16" fill="hsl(${hue},24%,30%)"/><text x="16" y="21.5" font-size="15" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="#E3E9EE">${esc}</text></svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 function viewersHere(pid) {
