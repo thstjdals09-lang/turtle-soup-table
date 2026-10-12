@@ -26,6 +26,14 @@
 
 진상은 저장소에 없다. 화면은 공개된 문제와 삽화 바탕만 갖고, 키워드·단서·진상은 열릴 때마다 서버 함수가 내려준다.
 
+## 판정은 누가 하나
+
+서버 함수가 아래 순서로 고른다. 코드를 바꿀 필요 없이 키만 넣고 빼면 된다.
+
+1. `ANTHROPIC_API_KEY`(함수 비밀 값)가 있으면 Claude API (유료, `SOUP_MODEL` 기본 `claude-opus-5-5`)
+2. 없으면 Gemini 무료 키 (`soup_keys` 표의 `gemini` 또는 함수 비밀 값 `GEMINI_API_KEY`). `GEMINI_MODELS` 기본 `gemini-flash-lite-latest,gemini-3.1-flash-lite` — 분당 한도에 걸리면 다음 모델로 넘어간다
+3. 둘 다 없거나 Gemini가 모두 막히면 질문을 대기로 남기고, 아래 출제자 봇이 받는다
+
 ## 출제자 봇 (방장 PC)
 
 API 키 없이 방장의 Claude 구독으로 판정한다. 게임할 때 방장 PC에서 켜 두면 친구들이 남긴 질문을 가져가 `claude -p`로 판정하고 결과를 올린다.
@@ -35,7 +43,7 @@ API 키 없이 방장의 Claude 구독으로 판정한다. 게임할 때 방장 
 - 봇이 꺼져 있으면 화면에 "출제자 봇이 꺼져 있어요"가 뜨고, 질문은 대기로 남았다가 봇이 켜지면 차례로 답한다
 - 선택: `BOT_MODEL`(예: sonnet), `BOT_PARALLEL`(동시 판정 수, 기본 2)
 
-Supabase 함수에 `ANTHROPIC_API_KEY`를 넣으면 봇 없이 서버가 직접 판정한다 (`SOUP_MODEL` 기본 `claude-opus-5-5`, `SOUP_DAILY_LIMIT` 기본 2000).
+서버가 직접 판정하는 동안(1·2번)에는 봇이 무료 AI가 넘긴 질문이나 30초 넘게 밀린 질문만 받는다.
 
 ## 운영
 

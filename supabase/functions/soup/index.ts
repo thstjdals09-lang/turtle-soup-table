@@ -1,9 +1,10 @@
 // 바다거북 수프 식탁 — 서버 함수 하나로 방 만들기, 질문 판정, 진상 채점, 단서 공개를 처리한다.
 // 화면은 soup_events를 읽기만 하고, 쓰기는 모두 여기서 service role로 한다.
 // 문제(진상 포함)는 soup_secrets 표에 있고, tools/seed.mjs 가 "seed" 동작으로 넣는다.
-// 판정은 두 방식: ANTHROPIC_API_KEY 가 있으면 여기서 Claude API로, 없으면 질문을 대기로 두고
-// 방장 PC의 출제자 봇(tools/host-bot.mjs)이 claude -p 로 판정해 "bot_done"으로 올린다.
-// 선택 비밀 값: ANTHROPIC_API_KEY, SOUP_MODEL, SOUP_DAILY_LIMIT
+// 판정 순서: ANTHROPIC_API_KEY 가 있으면 Claude API, 아니면 Gemini 무료 키(soup_keys 표의 gemini 또는 GEMINI_API_KEY),
+// 둘 다 없거나 Gemini가 한도에 걸리면 질문을 대기로 두고 방장 PC의 출제자 봇(tools/host-bot.mjs)이
+// claude -p 로 판정해 "bot_done"으로 올린다.
+// 선택 비밀 값: ANTHROPIC_API_KEY, SOUP_MODEL, SOUP_DAILY_LIMIT, GEMINI_API_KEY, GEMINI_MODELS
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { STALE_MS, derive } from "./rules.js";
@@ -16,6 +17,8 @@ const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
   auth: { persistSession: false },
 });
 const API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
+const GEMINI_ENV = Deno.env.get("GEMINI_API_KEY") || "";
+const GEMINI_MODELS = (Deno.env.get("GEMINI_MODELS") || "gemini-flash-lite-latest,gemini-3.1-flash-lite").split(",").map((m) => m.trim()).filter(Boolean);
 const MODEL = Deno.env.get("SOUP_MODEL") || "claude-opus-5-5";
 const DAILY = Number(Deno.env.get("SOUP_DAILY_LIMIT") || "2000");
 const FALLBACK_OK = ["claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "claude-fable-5-1"];
@@ -50,7 +53,7 @@ Deno.serve(async (req) => {
 async function handle(b: Row) {
   switch (b.action) {
     case "create": return create(b);
-    case "join": { const r = await room(b.code); return { code: r.code, host: r.host, judge: API_KEY ? "api" : "bot" }; }
+    case "join": { const r = await room(b.code); return { code: r.code, host: r.host, judge: await judgeMode() }; }
     case "ask": return ask(b);
     case "guess": return guess(b);
     case "retry": return retry(b);
@@ -95,6 +98,21 @@ async function seed(b: Row) {
   if (error) throw error;
   puzzles.clear();
   return { ok: true, count: rows.length };
+}
+
+/* ---------- 판정 방식 ---------- */
+let gem = { key: GEMINI_ENV, at: 0 };
+async function geminiKey() {
+  if (GEMINI_ENV) return GEMINI_ENV;
+  if (Date.now() - gem.at < 300000) return gem.key;
+  const { data } = await db.from("soup_keys").select("value").eq("name", "gemini").maybeSingle();
+  gem = { key: (data?.value as string) || "", at: Date.now() };
+  return gem.key;
+}
+async function judgeMode() {
+  if (API_KEY) return "api";
+  if (await geminiKey()) return "gemini";
+  return "bot";
 }
 
 /* ---------- 공통 ---------- */
@@ -147,9 +165,9 @@ async function patch(id: number, row: Row) {
   const { error } = await db.from("soup_events").update({ ...row, updated_at: now() }).eq("id", id);
   if (error) console.error("soup patch:", error);
 }
-// API 키가 있으면 여기서 판정하고, 없으면 대기로 두어 PC 봇이 가져가게 한다
-function judgeLater(p: () => Promise<unknown>) {
-  if (!API_KEY) return;
+// Claude API나 Gemini가 있으면 여기서 판정하고, 없으면 대기로 두어 PC 봇이 가져가게 한다
+async function judgeLater(p: () => Promise<unknown>) {
+  if ((await judgeMode()) === "bot") return;
   // deno-lint-ignore no-explicit-any
   const rt = (globalThis as any).EdgeRuntime;
   const job = p();
@@ -192,19 +210,19 @@ async function ask(b: Row) {
   if (pending.length >= 3) throw new Fail("too_many");
   await budget();
   const id = await insert({ room: r.code, puzzle: c.pid, scope: c.scope, player: c.player, name: c.name, kind: "q", body: text, status: "pending" });
-  judgeLater(() => judgeAndSave(id, null));
+  await judgeLater(() => judgeAndSave(id, null));
   return { id };
 }
 async function retry(b: Row) {
   const { player } = who(b);
   const r = await room(b.code);
   const e = await eventById(b.id, r.code);
-  const stale = e.status === "pending" && Date.now() - Date.parse(e.updated_at) > STALE_MS;
+  const stale = e.status === "pending" && (Date.now() - Date.parse(e.updated_at) > STALE_MS || !!e.err);
   if (!(e.status === "error" || stale) || (e.kind !== "q" && e.kind !== "guess")) throw new Fail("not_retryable");
   if (e.scope !== "coop" && e.scope !== player) throw new Fail("not_yours");
   await budget();
   await patch(e.id, { status: "pending", err: null });
-  judgeLater(() => (e.kind === "q" ? judgeAndSave(e.id, null) : gradeAndSave(e.id)));
+  await judgeLater(() => (e.kind === "q" ? judgeAndSave(e.id, null) : gradeAndSave(e.id)));
   return { id: e.id };
 }
 async function appeal(b: Row) {
@@ -215,7 +233,7 @@ async function appeal(b: Row) {
   if (e.scope !== "coop" && e.scope !== player) throw new Fail("not_yours");
   await budget();
   await patch(e.id, { appeal: "pending", prev: e.answer });
-  judgeLater(() => judgeAndSave(e.id, e.answer));
+  await judgeLater(() => judgeAndSave(e.id, e.answer));
   return { id: e.id };
 }
 // 판정 결과(모델 답)를 기록에 넣는다. API와 PC 봇이 함께 쓴다.
@@ -224,23 +242,32 @@ async function saveJudge(e: Row, out: unknown, appealing: boolean) {
   const d = derive(s.meta, (await eventsOf(e.room, e.puzzle, e.scope)).filter((x) => x.id !== e.id));
   const row: Row = { status: "done", ...cleanJudge(s, d, out), err: null };
   if (appealing) row.appeal = "done";
-  await patch(e.id, row);
+  await patchIfWaiting(e.id, row, appealing ? "appeal" : "status");
 }
 async function saveGrade(e: Row, out: unknown) {
   const s = await puzzleOf(e.puzzle);
-  await patch(e.id, { status: "done", ...cleanGrade(s, out), err: null });
+  await patchIfWaiting(e.id, { status: "done", ...cleanGrade(s, out), err: null }, "status");
+}
+async function patchIfWaiting(id: number, row: Row, field: string) {
+  const { error } = await db.from("soup_events").update({ ...row, updated_at: now() }).eq("id", id).eq(field, "pending");
+  if (error) console.error("soup patch:", error);
+}
+// 판정 실패: 무료 AI가 바쁘면 대기로 남겨 PC 봇이나 다시 묻기가 받게 하고, 그 밖엔 실패로 표시한다
+async function failJudge(id: number, err: unknown, appealing: boolean) {
+  const code = errCode(err);
+  console.error("soup judge:", code, err);
+  if (code === "gemini_busy") await patch(id, { err: code });
+  else await patch(id, appealing ? { appeal: "error", err: code } : { status: "error", err: code });
 }
 async function judgeAndSave(id: number, appealFrom: string | null) {
   try {
     const e = await eventById(id);
     const s = await puzzleOf(e.puzzle);
     const d = derive(s.meta, (await eventsOf(e.room, e.puzzle, e.scope)).filter((x) => x.id !== id));
-    const out = await callClaude(judgeSystem(s), judgeUser(d, e.body, appealFrom), judgeSchema(s), appealFrom ? "high" : "low");
+    const out = await callModel(judgeSystem(s), judgeUser(d, e.body, appealFrom), judgeSchema(s), appealFrom ? "high" : "low");
     await saveJudge(e, out, !!appealFrom);
   } catch (err) {
-    const code = errCode(err);
-    console.error("soup judge:", code, err);
-    await patch(id, appealFrom ? { appeal: "error", err: code } : { status: "error", err: code });
+    await failJudge(id, err, !!appealFrom);
   }
 }
 
@@ -255,18 +282,16 @@ async function guess(b: Row) {
   if (d.guessing) throw new Fail("guessing");
   await budget();
   const id = await insert({ room: r.code, puzzle: c.pid, scope: c.scope, player: c.player, name: c.name, kind: "guess", body: text, status: "pending", final: d.capped });
-  judgeLater(() => gradeAndSave(id));
+  await judgeLater(() => gradeAndSave(id));
   return { id };
 }
 async function gradeAndSave(id: number) {
   try {
     const e = await eventById(id);
     const s = await puzzleOf(e.puzzle);
-    await saveGrade(e, await callClaude(gradeSystem(s), gradeUser(e.body), gradeSchema(s), "medium"));
+    await saveGrade(e, await callModel(gradeSystem(s), gradeUser(e.body), gradeSchema(s), "medium"));
   } catch (err) {
-    const code = errCode(err);
-    console.error("soup grade:", code, err);
-    await patch(id, { status: "error", err: code });
+    await failJudge(id, err, false);
   }
 }
 
@@ -275,7 +300,7 @@ async function botPing(b: Row) {
   await admin(b.token);
   const { error } = await db.from("soup_status").upsert({ id: 1, bot_seen: b.off ? null : now() });
   if (error) throw error;
-  return { ok: true, judge: API_KEY ? "api" : "bot" };
+  return { ok: true, judge: await judgeMode() };
 }
 async function botDone(b: Row) {
   await admin(b.token);
@@ -329,6 +354,34 @@ async function reveal(b: Row) {
     clues: d.clues.filter((c: Row) => c.open).map((c: Row) => ({ i: c.i, text: s.clues[c.i]?.text || "", layer: s.layers?.[c.id] || "" })),
     truth: d.over ? s.truth : null,
   };
+}
+
+/* ---------- 모델 호출 ---------- */
+function callModel(system: string, user: string, schema: Row, effort: string) {
+  return API_KEY ? callClaude(system, user, schema, effort) : callGemini(system, user, schema);
+}
+// Gemini 무료 등급: 분당 한도에 걸리면 다음 모델로, 모두 막히면 gemini_busy
+async function callGemini(system: string, user: string, schema: Row) {
+  const key = await geminiKey();
+  if (!key) throw new Fail("no_key");
+  for (const model of GEMINI_MODELS) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: user }] }],
+        generationConfig: { responseMimeType: "application/json", responseJsonSchema: schema },
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 429 || r.status >= 500) { console.error("gemini busy:", model, r.status); continue; }
+    if (!r.ok || j.error) { console.error("gemini error:", model, r.status, j.error?.message); throw new Fail("gemini_error"); }
+    if (j.promptFeedback?.blockReason || j.candidates?.[0]?.finishReason === "SAFETY") throw new Fail("refused");
+    const text = (j.candidates?.[0]?.content?.parts || []).map((p: Row) => p.text || "").join("");
+    try { return JSON.parse(text); } catch { throw new Fail("bad_json"); }
+  }
+  throw new Fail("gemini_busy");
 }
 
 /* ---------- Claude API ---------- */

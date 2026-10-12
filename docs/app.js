@@ -73,6 +73,7 @@ const ERR = {
   too_many: '답을 기다리는 질문이 세 개예요. 답이 오면 다시 물어 주세요.',
   not_host: '함께 풀기 기록은 방을 만든 사람만 지울 수 있어요.',
   bot_failed: '출제자 봇이 판정하지 못했어요. 다시 묻기를 눌러 주세요.',
+  gemini_busy: '무료 AI가 잠깐 붐벼요. 조금 뒤 다시 묻기를 누르거나, 방장 출제자 봇이 켜져 있으면 봇이 대신 답해요.',
   no_clue: '더 열 단서가 없어요.',
   server: '출제자가 답을 정하지 못했어요. 다시 묻기를 눌러 주세요.'
 };
@@ -624,12 +625,13 @@ function entry(pid, x, d, kind, rv) {
   const av = h('img', { class: 'av', src: avatar(x.player, name), alt: '' });
   const head = extra => h('div', { class: 'who' }, h('b', { text: kind === 'versus' ? '나' : name }), extra, h('span', null, ago(x.created_at)));
   const waitBot = stale && S.judge === 'bot';
-  const retryBtn = (x.status === 'error' || (stale && !waitBot)) && !d.over ? h('button', { class: 'btn small', type: 'button', disabled: S.busy, onclick: () => retry(x) }, '다시 묻기') : null;
-  const errTag = x.status === 'error' && x.err ? h('span', { class: 'tag' }, errText(x.err)) : null;
+  const busyAI = x.status === 'pending' && !!x.err;   // 무료 AI가 한도에 걸려 대기로 남은 것
+  const retryBtn = (x.status === 'error' || busyAI || (stale && !waitBot)) && !d.over ? h('button', { class: 'btn small', type: 'button', disabled: S.busy, onclick: () => retry(x) }, '다시 묻기') : null;
+  const errTag = (x.status === 'error' || busyAI) && x.err ? h('span', { class: 'tag' }, errText(x.err)) : null;
   const label = f => rv.facts?.[f] || '…';
   if (x.kind === 'q') {
     const done = x.status === 'done';
-    const side = done ? stamp(x.answer) : x.status === 'error' || (stale && !waitBot) ? h('span', { class: 'stamp pend' }, '답 없음') : h('span', { class: 'stamp pend' }, h('span', { class: 'dots' }, waitBot ? '출제자 기다리는 중' : '생각 중'));
+    const side = done ? stamp(x.answer) : busyAI ? h('span', { class: 'stamp pend' }, '잠시 대기') : x.status === 'error' || (stale && !waitBot) ? h('span', { class: 'stamp pend' }, '답 없음') : h('span', { class: 'stamp pend' }, h('span', { class: 'dots' }, waitBot ? '출제자 기다리는 중' : '생각 중'));
     const meta = [];
     if (done && x.note && NOTES[x.note]) meta.push(h('span', { class: 'tag' }, NOTES[x.note]));
     if (done) for (const f of x.facts || []) { const ff = P[pid].facts.find(z => z.id === f); if (ff && d.revealed.get(f)?.ev === x.id) meta.push(h('span', { class: 'tag found' }, (ff.need ? '★ 키워드 발견: ' : '+ 보너스 키워드: ') + label(f))); }

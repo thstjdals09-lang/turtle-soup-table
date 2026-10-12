@@ -78,6 +78,7 @@ function runClaude(system, user, schema) {
 }
 
 const busy = new Set();
+let serverMode = 'bot';
 async function handle(e) {
   const mode = e.appeal === 'pending' ? 'appeal' : e.kind === 'guess' ? 'grade' : 'judge';
   const s = puzzles[e.puzzle];
@@ -106,6 +107,7 @@ async function tick() {
     for (const e of rows) {
       if (busy.size >= PARALLEL) break;
       if (busy.has(e.id) || !['q', 'guess'].includes(e.kind)) continue;
+      if (serverMode !== 'bot' && !e.err && Date.now() - Date.parse(e.updated_at) < 30000) continue;
       busy.add(e.id);
       handle(e).finally(() => busy.delete(e.id));
     }
@@ -114,7 +116,12 @@ async function tick() {
 async function ping(off) {
   try {
     const r = await fn('bot_ping', off ? { off: true } : {});
-    if (r.judge === 'api' && !off) log('알림: 서버에 API 키가 있어서 판정은 서버가 해요. 이 봇은 켜 둬도 할 일이 없어요.');
+    if (!off && r.judge !== serverMode) {
+      serverMode = r.judge;
+      if (serverMode === 'gemini') log('서버가 Gemini 무료 AI로 판정해요. 무료 한도에 걸린 질문만 이 봇이 대신 답해요.');
+      else if (serverMode === 'api') log('서버가 Claude API로 판정해요. 서버가 못 한 질문만 이 봇이 대신 답해요.');
+      else log('서버에 AI 키가 없어서 모든 판정을 이 봇이 해요.');
+    }
   } catch (err) { log('서버에 출석을 알리지 못했어요:', err.message); }
 }
 
