@@ -28,6 +28,9 @@ writeFileSync(join(root, 'private/art/sheet.json'), JSON.stringify(Object.fromEn
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const row = (x, i) => `<li data-key="${esc(x.key)}"><div class="h"><label><input type="checkbox"> <b>${i + 1}.</b> No.${x.no} ${esc(x.title)} · <span class="k">${esc(x.kind)}</span></label><button type="button">복사</button></div><textarea readonly rows="3">${esc(x.prompt)}</textarea></li>`;
 const s1 = todo.filter(x => x.step === 1), s2 = todo.filter(x => x.step === 2);
+// 콘솔 자동 실행 코드: 1단계부터 순서대로
+const auto = readFileSync(join(root, 'tools/art-auto.js'), 'utf8').replace('__ITEMS__', JSON.stringify([...s1, ...s2].map(x => [x.key, x.prompt])));
+writeFileSync(join(root, 'private/art/auto.js'), auto);
 const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>사진 작업표</title><style>
 :root{color-scheme:dark}body{margin:0;background:#0b0f14;color:#d6dde6;font:15px/1.6 system-ui,"Malgun Gothic",sans-serif}
@@ -45,6 +48,13 @@ button{background:#8db9d9;color:#0b0f14;border:0;border-radius:6px;padding:6px 1
 <li>카메라·컬러 설정은 건드리지 않기</li></ul>
 <b>하는 법</b>: [복사] → 사이트 입력칸에 붙여 넣기 → 생성하기. 결과가 마음에 안 들면 같은 프롬프트로 다시 뽑아도 돼요(제가 가장 최근 것을 씁니다).<br>
 1단계만 끝내도 모든 사건에 사진이 들어갑니다. 다 되면 Claude에게 "다 뽑았어"라고 알려 주세요.</div>
+<div class="set" style="margin-top:12px;border-color:#8db9d9"><b>자동으로 하기</b> <button type="button" id="autoBtn">자동 실행 코드 복사</button><ol style="margin:8px 0 0;padding-left:20px">
+<li>로그인된 크롬에서 힉스필드 <b>Soul Cinema 생성 화면</b>을 열고 위 설정을 맞춰 두기</li>
+<li>그 탭에서 <b>F12</b> → 위쪽 <b>Console(콘솔)</b> 탭 클릭</li>
+<li>처음 붙여 넣을 때 경고가 나오면 경고문이 시키는 대로 <b>붙여넣기 허용</b>(allow pasting)을 입력하고 Enter</li>
+<li>Ctrl+V → Enter. 오른쪽 아래에 진행판이 뜨고 한 장씩 넣어요(15초 간격, 약 40분)</li>
+<li>그 탭은 띄워 둔 채로 두세요(최소화하면 느려져요). 멈췄다가 다시 붙여 넣으면 이어서 해요</li></ol>
+<textarea id="autoCode" readonly rows="2" style="display:none">${esc(auto)}</textarea></div>
 <div class="bar" id="bar"></div>
 <h2>1단계 · 사건 사진 ${s1.length}장</h2><ol class="list">${s1.map(row).join('')}</ol>
 <h2>2단계 · 단서 사진 ${s2.length}장</h2><ol class="list">${s2.map((x, i) => row(x, s1.length + i)).join('')}</ol>
@@ -58,6 +68,7 @@ cb.checked=!!done[li.dataset.key];li.classList.toggle('done',cb.checked);
 cb.onchange=()=>{done[li.dataset.key]=cb.checked;li.classList.toggle('done',cb.checked);save();count()};
 bt.onclick=async()=>{try{await navigator.clipboard.writeText(ta.value)}catch(e){ta.select();document.execCommand('copy')}
 bt.textContent='복사됨';bt.classList.add('ok');cb.checked=true;cb.onchange();setTimeout(()=>{bt.textContent='복사';bt.classList.remove('ok')},1500)}}
-count();</script></body></html>`;
+count();
+document.getElementById('autoBtn').onclick=async e=>{const t=document.getElementById('autoCode').value;try{await navigator.clipboard.writeText(t)}catch(x){const ta=document.getElementById('autoCode');ta.style.display='block';ta.select();document.execCommand('copy');ta.style.display='none'}e.target.textContent='복사됨 — 힉스필드 콘솔에 붙여 넣기';e.target.classList.add('ok')};</script></body></html>`;
 writeFileSync(join(root, 'private/art/sheet.html'), html);
 console.log(`작업표: 1단계 ${s1.length}장 + 2단계 ${s2.length}장 = ${todo.length}장 → private/art/sheet.html`);
