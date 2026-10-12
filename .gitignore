@@ -1,0 +1,7 @@
+# 진상이 든 원본과 시드 SQL은 공개 저장소에 올리지 않는다
+private/
+# 예전 claude.ai 아티팩트판 (로컬 보관용)
+artifact/
+node_modules/
+.env
+*.local
