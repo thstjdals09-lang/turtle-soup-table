@@ -452,10 +452,6 @@ i.t-miss{background:#5A2724;outline:1px solid var(--red);outline-offset:-1px}
   .mtabs .badge:empty{display:none}
   .table-grid[data-mtab="case"] .desk{display:none}
   .table-grid[data-mtab="log"] .board{display:none}
-  /* 기록 탭에서는 문제를 세 줄로 줄여 두고, 누르면 사건 탭으로 */
-  .table-grid[data-mtab="log"] .soup-card{cursor:pointer;padding:14px 16px}
-  .table-grid[data-mtab="log"] .soup-card .story{font-size:15px;line-height:1.7;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin:6px 0 0}
-  .table-grid[data-mtab="log"] .soup-card .kw,.table-grid[data-mtab="log"] .soup-card .here{display:none}
   .table-head{padding-block:16px 12px}
 }
 
@@ -584,3 +580,175 @@ i.t-miss{background:#5A2724;outline:1px solid var(--red);outline-offset:-1px}
   .v-actions .row .btn{flex:1}
 }
 @media (pointer:coarse){.like{min-height:36px;padding:4px 13px}}
+
+/* ======================================================================
+   한 화면에서 게임하기: 사건 화면은 페이지가 스크롤되지 않는다.
+   위(머리 · 미터 · 문제와 키워드)는 고정, 심문 기록만 안에서 스크롤, 질문 입력은 맨 아래.
+   ====================================================================== */
+body.in-table{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+body.in-table .top{flex:none}
+body.in-table .wrap{flex:1;min-height:0;width:100%;box-sizing:border-box;display:flex;flex-direction:column;padding-bottom:0}
+body.in-table #table{flex:1;min-height:0;display:flex;flex-direction:column}
+body.in-table .table-head{flex:none;padding-block:12px 10px;gap:8px 14px}
+body.in-table .table-grid{flex:1;min-height:0;grid-template-rows:auto minmax(0,1fr);align-items:stretch;gap:12px 28px;padding-bottom:8px}
+body.in-table .soup{align-self:start;min-height:0}
+body.in-table .board{position:static;height:100%;max-height:none;overflow:auto;min-height:0}
+body.in-table .desk{min-height:0;display:flex;flex-direction:column;gap:8px}
+body.in-table .log-tools{flex:none}
+.desk-scroll{display:flex;flex-direction:column;gap:12px}
+body.in-table .desk-scroll{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--line) transparent;padding-right:4px}
+body.in-table .composer{position:static;flex:none;background:none;padding:8px 0 calc(2px + env(safe-area-inset-bottom,0px))}
+/* 사건이 끝나면 문제 카드 자리까지 종결 화면이 쓴다 */
+.table-grid.over .soup{display:none}
+.t-title h2{font-size:clamp(20px,2.6vw,28px)}
+
+/* 문수 미터: 두 줄 */
+.meter{gap:4px}
+.m-row{display:flex;align-items:center;gap:10px;min-width:0}
+.m-n{display:inline-flex;align-items:baseline;gap:2px;flex:none}
+.m-n b{font-family:var(--f-type);font-weight:400;font-size:26px;line-height:1;color:var(--accent-strong);font-variant-numeric:tabular-nums}
+.m-n .of{font-family:var(--f-type);font-size:12px;color:var(--muted)}
+.m-row .bar{flex:1;min-width:60px}
+.m-row .nx{font-size:12px;color:var(--muted);white-space:nowrap}
+.m-row2{justify-content:space-between}
+.meter .m-sub{display:block;font-family:var(--f-type);font-size:11.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.m-row2 .heat{flex:0 1 270px}
+
+/* 문제와 키워드 (메인) */
+.soup-card{padding:16px 20px}
+.soup-card .lbl-r{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.soup-card .story{font-size:18px;line-height:1.75;margin-top:10px;cursor:pointer}
+.slots-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;font-family:var(--f-type);font-size:12px;color:var(--muted);letter-spacing:.04em}
+.slots-head .b{color:#E0B44C}
+.guess-btn{padding:8px 18px;font-size:14px;flex:none}
+.slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px;margin-top:8px}
+.slot{display:flex;align-items:flex-start;gap:8px;border:1px dashed var(--line);border-radius:3px;padding:7px 10px;font-size:13.5px;line-height:1.45;color:var(--faint);min-width:0}
+.slot .sn{font-family:var(--f-type);flex:none}
+.slot.open{border-style:solid;border-color:#2C4A60;background:#0E1A24;color:#DDEEFA}
+.slot.open .sn{color:var(--accent)}
+.slot.bonus{border-color:#4A3E24}
+.slot.bonus .sn{color:var(--brass)}
+.slot.bonus.open{background:#1A160C;color:#F6E2A6;border-color:#5A4A26}
+.slot.fresh{animation:fresh 1.6s ease-out}
+.soup-card .here{margin-top:10px}
+
+/* 질문 입력줄 (한 줄) */
+.composer .comp-row{display:flex;gap:8px;align-items:center}
+.c-lbl{font-family:var(--f-type);font-size:12px;color:var(--accent);letter-spacing:.1em;flex:none}
+#draft{flex:1;min-width:0;height:42px;border:1px solid var(--line);background:#0B1016;border-radius:3px;padding:0 12px;font-size:15px;color:var(--fg)}
+#draft::placeholder{color:var(--faint);font-size:13px}
+#draft:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(141,185,217,.1)}
+#draft:disabled{opacity:.6}
+.composer .comp-row .btn{height:42px;padding-inline:18px}
+.comp-note{font-size:11.5px;margin-top:4px}
+.comp-note:not(:has(span:not(:empty))){display:none}
+
+/* 의논 창 (함께 풀기) */
+.talk{position:fixed;right:16px;bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:40;display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none}
+.talk>*{pointer-events:auto}
+.talk-fab{display:inline-flex;align-items:center;gap:6px;border:1px solid #2C4A60;background:rgba(11,21,32,.94);color:var(--accent-strong);border-radius:999px;padding:9px 16px;font-weight:700;font-size:14px;box-shadow:var(--shadow);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.talk-fab::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.talk-fab.on{background:var(--accent);color:var(--on-accent)}
+.talk-fab.on::before{background:var(--on-accent);box-shadow:none}
+.talk-fab .badge{font-family:var(--f-type);font-size:11px;background:var(--red);color:#fff;border-radius:9px;padding:1px 7px}
+.talk-fab .badge:empty{display:none}
+.talk-panel{width:min(360px,calc(100vw - 32px));height:min(440px,calc(100dvh - 210px));display:flex;flex-direction:column;background:var(--raise);border:1px solid var(--line);border-radius:10px;box-shadow:0 30px 80px -20px rgba(0,0,0,.9);overflow:hidden}
+.talk-head{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 14px;border-bottom:1px solid var(--line)}
+.talk-head b{font-family:var(--f-display);font-weight:400;font-size:18px}
+.talk-head span{font-size:11.5px;color:var(--faint);flex:1}
+.talk-x{border:0;background:none;color:var(--muted);font-size:15px;width:34px;height:34px;border-radius:3px}
+.talk-x:hover{color:var(--fg);background:var(--line-soft)}
+.talk-list{list-style:none;margin:0;padding:12px 14px;flex:1;overflow:auto;display:flex;flex-direction:column;gap:12px;scrollbar-width:thin}
+.talk-item{display:flex;gap:8px}
+.talk-item img{width:26px;height:26px;border-radius:50%;flex:none}
+.talk-item .tw{margin:0;font-size:11.5px;color:var(--faint);display:flex;gap:6px}
+.talk-item .tw b{color:var(--muted)}
+.talk-item.mine .tw b{color:var(--accent)}
+.talk-item .tt{margin:2px 0 0;font-size:14px;line-height:1.5;color:#E2E7EB;white-space:pre-wrap;overflow-wrap:anywhere}
+.talk-empty{font-size:13px;color:var(--faint);line-height:1.6}
+.talk-form{display:flex;gap:6px;padding:8px;border-top:1px solid var(--line)}
+.talk-form input{flex:1;min-width:0;height:38px;border:1px solid var(--line);background:#0B1016;border-radius:3px;padding:0 10px;font-size:14px;color:var(--fg)}
+.talk-form input:focus{outline:none;border-color:var(--accent)}
+.talk-form .btn{height:38px}
+
+/* 새 버전 알림 */
+.toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:70;display:flex;align-items:center;gap:12px;max-width:calc(100vw - 24px);background:#0F2232;border:1px solid var(--accent);border-radius:8px;padding:9px 8px 9px 16px;box-shadow:0 20px 50px -10px rgba(0,0,0,.8);font-size:13.5px;color:#DDEEFA}
+.toast b{color:#fff}
+.toast-x{border:0;background:none;color:var(--muted);width:30px;height:30px;flex:none}
+
+/* 진상 제출 · 진행 방식 고르기 창 */
+.guess-sheet{max-width:620px}
+.guess-sheet textarea{min-height:180px;resize:vertical;font-size:15px;line-height:1.65}
+.mode-sheet{max-width:540px}
+.mode-pick{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mode-opt{display:flex;flex-direction:column;gap:6px;text-align:left;border:1px solid var(--line);background:#0E141B;border-radius:6px;padding:14px;color:var(--fg);cursor:pointer}
+.mode-opt b{font-family:var(--f-display);font-weight:400;font-size:21px}
+.mode-opt span{font-size:13px;color:var(--muted);line-height:1.55}
+.mode-opt small{font-family:var(--f-type);font-size:11.5px;color:var(--accent);margin-top:auto}
+.mode-opt:hover,.mode-opt:focus-visible{border-color:var(--accent);background:#0F1C27}
+.mode-opt.last{border-color:#2C4A60}
+
+/* 좁은 화면: 탭 하나씩, 위는 짧게 */
+@media (max-width:900px){
+  body.in-table .table-head{padding-block:8px 6px;gap:6px 10px}
+  .back span{display:none}
+  .back{padding:5px 11px}
+  body.in-table .t-title{flex:1 1 0;min-width:0}
+  body.in-table .t-title h2{font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  body.in-table .t-title .no{font-size:11px}
+  body.in-table .seg button{padding:5px 10px;font-size:12.5px}
+  body.in-table .meter{flex-basis:100%;max-width:none}
+  .m-n b{font-size:21px}
+  .m-row .nx{font-size:11px}
+  .m-row2 .h-lbl{display:none}
+  body.in-table .mtabs{position:static;margin:0 0 8px}
+  body.in-table .mtabs button{min-height:38px}
+  body.in-table .table-grid{display:flex;flex-direction:column;gap:8px}
+  .table-grid[data-mtab="case"] .soup{display:none}
+  body.in-table .soup{flex:none;max-height:48%;overflow:auto}
+  body.in-table .board{flex:1}
+  body.in-table .desk{flex:1}
+  .soup-card{padding:12px 14px}
+  .soup-card .story{font-size:16px;line-height:1.65;margin-top:6px}
+  .soup-card:not(.open) .story{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .slots{grid-template-columns:1fr 1fr;gap:5px}
+  .slot{font-size:12.5px;padding:6px 8px}
+  .slot .st{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .soup-card .here{display:none}
+  .guess-btn{padding:6px 14px;font-size:13px}
+}
+@media (max-width:560px){
+  .talk{right:10px;left:10px;align-items:stretch}
+  .talk-fab{align-self:flex-end}
+  .talk-panel{width:auto;height:min(62dvh,460px)}
+  .toast{left:12px;right:12px;transform:none;flex-wrap:wrap}
+  .mode-pick{grid-template-columns:1fr}
+  .c-lbl{display:none}
+  .slots{grid-template-columns:1fr}
+}
+
+/* 문제 카드를 촘촘하게: 키워드는 한 줄로 가로 배열, 이야기는 접어 두고 누르면 펼침 */
+.slots{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(150px,1fr);overflow-x:auto;scrollbar-width:thin;padding-bottom:2px}
+.slot .st{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+@media (max-height:860px){.soup-card:not(.open) .story{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}}
+@media (max-width:900px){.soup-card:not(.open) .story{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.slots{grid-template-columns:none;grid-auto-columns:minmax(140px,48%)}.slots-head{margin-top:8px}}
+@media (max-height:700px){body.in-table .m-row2{display:none}}
+.soup-card .story::after{content:""}
+/* 문제 카드가 화면 폭을 넘지 않게 (키워드 줄이 늘어나 화면이 넓어지는 것 방지) */
+.soup,.soup-card{min-width:0;max-width:100%}
+.slots{width:100%;grid-auto-columns:minmax(150px,1fr)}
+@media (max-width:900px){.slots{grid-auto-columns:minmax(140px,1fr)}}
+/* 낮은 화면: 이야기 두 줄, 키워드 한 줄 */
+@media (max-height:800px){.soup-card{padding:12px 16px}.soup-card:not(.open) .story{-webkit-line-clamp:2;font-size:16px;line-height:1.6;margin-top:6px}.slot .st{-webkit-line-clamp:1}.slots-head{margin-top:8px}}
+/* 좁은 화면: 필터 칩은 한 줄 가로 스크롤, 질문을 입력하는 동안엔 문제 카드를 한 줄로 */
+@media (max-width:900px){
+  body.in-table .log-tools{flex-wrap:nowrap}
+  body.in-table .log-tools .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;min-width:0}
+  body.in-table .log-tools .chips::-webkit-scrollbar{display:none}
+  body.in-table .log-tools .chip{flex:none}
+  body.in-table .log-tools .count{display:none}
+  body.in-table:has(#draft:focus) .soup-card .story,body.in-table:has(#draft:focus) .soup-card .slots,body.in-table:has(#draft:focus) .soup-card .lbl{display:none}
+  body.in-table:has(#draft:focus) .soup-card .slots-head{margin-top:0}
+}
+/* 의논 버튼이 마지막 기록을 가리지 않게 */
+body.in-table:has(#talk:not([hidden])) .desk-scroll{padding-bottom:56px}

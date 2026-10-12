@@ -37,6 +37,8 @@
   </div>
 </header>
 
+<div class="toast" id="toast" role="status" hidden></div>
+
 <main class="wrap">
   <section id="home">
     <div class="hero">
@@ -76,49 +78,55 @@
 
   <section id="table" hidden>
     <div class="table-head">
-      <button class="back" id="backBtn" type="button">← 사건 파일</button>
+      <button class="back" id="backBtn" type="button" aria-label="사건 파일로">←<span> 사건 파일</span></button>
       <div class="t-title"><span class="no" id="tNo"></span><h2 id="tTitle"></h2></div>
       <div class="seg" id="playSeg" role="group" aria-label="진행 방식">
         <button type="button" data-play="coop">함께 풀기</button>
-        <button type="button" data-play="versus">경쟁전</button>
+        <button type="button" data-play="versus">따로 풀기</button>
       </div>
       <div class="meter" id="meter"></div>
     </div>
     <div class="mtabs" id="mtabs" role="tablist" aria-label="사건 화면 나누기">
-      <button type="button" role="tab" data-mtab="case" aria-selected="false">사건 · 증거</button>
-      <button type="button" role="tab" data-mtab="log" aria-selected="true">심문 기록 <span class="badge" id="mtabBadge"></span></button>
+      <button type="button" role="tab" data-mtab="log" aria-selected="true">문제 · 심문 <span class="badge" id="mtabBadge"></span></button>
+      <button type="button" role="tab" data-mtab="case" aria-selected="false">사진 · 단서</button>
     </div>
     <div class="table-grid" id="tableGrid">
       <div class="soup" id="soupArea"></div>
       <aside class="board" id="board"></aside>
       <div class="desk">
-        <div id="botBanner"></div>
-        <div id="verdictArea"></div>
         <div class="log-tools">
           <div class="chips" id="filters"></div>
           <span class="count" id="logCount"></span>
         </div>
-        <ol class="log" id="log"></ol>
-        <div id="logEmpty"></div>
+        <div class="desk-scroll" id="deskScroll">
+          <div id="botBanner"></div>
+          <div id="verdictArea"></div>
+          <ol class="log" id="log"></ol>
+          <div id="logEmpty"></div>
+        </div>
         <form class="composer" id="composer" autocomplete="off">
-          <div class="comp-top">
-            <div class="seg" id="composeSeg" role="group" aria-label="입력 종류">
-              <button type="button" id="segAsk" aria-pressed="true">질문하기</button>
-              <button type="button" id="segChat" aria-pressed="false" title="출제자에게 묻지 않고 같은 방 사람들끼리 의견을 나눠요">의논</button>
-              <button type="button" id="segGuess" aria-pressed="false">진상 제출</button>
-            </div>
-            <span class="typing" id="typing"></span>
-          </div>
           <div class="comp-row">
-            <textarea id="draft" rows="1" maxlength="500" placeholder="네 · 아니오로 답할 수 있게 물어 보세요"></textarea>
+            <label class="c-lbl" for="draft">질문</label>
+            <input id="draft" type="text" maxlength="300" placeholder="네 · 아니오로 답할 수 있게 물어 보세요" enterkeyhint="send">
             <button class="btn primary" id="sendBtn" type="submit">묻기</button>
           </div>
-          <div class="comp-note"><span id="compHelp">Enter로 보내기 · Shift+Enter 줄바꿈</span><span id="compErr" class="err"></span></div>
+          <div class="comp-note"><span id="compHelp"></span><span class="typing" id="typing"></span><span id="compErr" class="err"></span></div>
         </form>
       </div>
     </div>
   </section>
 </main>
+<aside class="talk" id="talk" hidden>
+  <section class="talk-panel" id="talkPanel" hidden aria-label="의논">
+    <header class="talk-head"><b>의논</b><span>출제자는 듣지 않고 문수에도 안 들어가요</span><button class="talk-x" id="talkClose" type="button" aria-label="의논 닫기">✕</button></header>
+    <ol class="talk-list" id="talkList"></ol>
+    <form class="talk-form" id="talkForm" autocomplete="off">
+      <input id="talkInput" type="text" maxlength="300" placeholder="같은 방 사람들에게 하는 말" enterkeyhint="send" aria-label="의논 입력">
+      <button class="btn" type="submit">말하기</button>
+    </form>
+  </section>
+  <button class="talk-fab" id="talkFab" type="button" aria-expanded="false" aria-controls="talkPanel">의논 <span class="badge" id="talkBadge"></span></button>
+</aside>
 <div id="sheetRoot"></div>
 <script type="module" src="app.js"></script>
 </body>
