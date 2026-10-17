@@ -568,9 +568,27 @@ function guessSheet() {
   ta.value = S.guessDraft || ''; ta.focus();
 }
 const retry = x => act('retry', { id: x.id });
-function appeal(x) {
-  sheet('판정에 이의를 제기할까요?', `"${x.answer}" 판정을 더 신중하게 진상을 다시 읽고 판정해요. 문수는 늘지 않아요. 질문마다 한 번만 할 수 있어요.`, '이의 제기', () => act('appeal', { id: x.id }));
+// 이의: 출제자 AI가 진상을 다시 읽고 판정한다. 끝난 사건은 결과(문수 · 등급)를 그대로 두고 다시 내린 판정만 남긴다.
+// 함께 풀기는 방 사람 누구나, 따로 풀기는 자기 질문만. 질문마다 한 번 (검토가 실패했으면 다시).
+const canAppeal = x => x.kind === 'q' && x.status === 'done' && x.answer !== '반려' && (!x.appeal || x.appeal === 'error') && (x.scope === 'coop' || x.scope === me);
+function appeal(x, late) {
+  const body = late
+    ? `"${x.answer}" 판정을 출제자 AI가 진상을 다시 읽고 다시 판정해요. 끝난 사건이라 문수와 등급은 바뀌지 않고, 다시 내린 판정만 기록에 남아요. 질문마다 한 번만 할 수 있어요.`
+    : `"${x.answer}" 판정을 더 신중하게 진상을 다시 읽고 판정해요. 문수는 늘지 않아요. 질문마다 한 번만 할 수 있어요.`;
+  sheet('판정에 이의를 제기할까요?', body, '이의 제기', async () => {
+    try { await api('appeal', { code: S.room, id: x.id }); toast('이의를 보냈어요. 다시 판정하는 중이에요.'); }
+    catch (e) { toast(errText(e.code)); }
+  });
 }
+function appealNote(x) {
+  const changed = x.prev && x.prev !== x.answer;
+  if (x.appeal === 'pending') return h('span', { class: 'tag' }, h('span', { class: 'dots' }, '이의 제기 · 다시 판정 중'));
+  if (x.appeal === 'done') return h('span', { class: 'tag' + (changed ? ' fixed' : '') }, changed ? `이의 받아들여짐 · ${x.prev} → ${x.answer}` : '이의 검토 · 판정 유지');
+  if (x.appeal === 'late') return h('span', { class: 'tag' + (changed ? ' fixed' : '') }, changed ? `다시 판정하면 「${x.prev}」 · 결과는 그대로` : '이의 검토 · 다시 판정해도 같아요');
+  if (x.appeal === 'error') return h('span', { class: 'tag' }, '이의 검토 실패');
+  return null;
+}
+const appealBtn = (x, late) => h('button', { class: 'flag', type: 'button', title: late ? '판정이 이상하면 다시 판정을 요청해요 (결과는 그대로)' : '판정이 이상하면 다시 판정을 요청해요', onclick: () => appeal(x, late) }, x.appeal === 'error' ? '🚩 다시 이의' : '🚩 이의');
 // 함께 풀기 규칙이 켜져 있으면 긴급 단서 · 질문 끝내기 · 포기는 방장만
 const hostOnly = d => playing() === 'coop' && (d.rules.turns || d.rules.approve) && S.host !== me;
 function buyClue() {
@@ -1256,11 +1274,16 @@ function verdictEl(pid, d, rv, kind, look) {
     h('div', { class: 'trail' }, trail.map(t => h('i', { class: 't-' + t.c, title: t.t }))),
     h('p', { class: 'legend' }, [['yes', '네'], ['no', '아니오'], ['na', '관계없음'], ['amb', '애매함'], ['key', '키워드 발견'], ['clue', '긴급 열람']].map(([c, t]) => h('span', null, h('i', { class: 't-' + c }), t)))) : null;
 
-  const allQs = versus ? allVersusQs(pid) : [];
+  // 심문 기록: 판정이 이상하면 여기서도 이의를 걸 수 있다 (결과는 그대로, 다시 내린 판정만 남는다)
+  const allQs = versus ? allVersusQs(pid) : countedQs(d.L);
   const table = allQs.length ? h('section', { class: 'v-sec' },
-    h('p', { class: 'v-lbl' }, '전원 심문 기록 · 누가 무엇을 물었나'),
+    h('p', { class: 'v-lbl' }, h('span', null, versus ? '전원 심문 기록 · 누가 무엇을 물었나' : '심문 기록 · 우리가 물은 것'),
+      h('span', null, versus ? '판정이 이상하면 내 질문에 🚩 이의 · 결과는 그대로' : '판정이 이상하면 🚩 이의 · 결과는 그대로')),
     h('div', { class: 'qtable' }, allQs.map((x, i) => h('div', { class: 'qrow' },
-      h('span', { class: 'qn' }, `#${i + 1}`), h('span', { class: 'nm', text: x.name || who(x.player).name }), h('span', { class: 'q', text: x.body }), stamp(x.answer), likeBtn(x))))) : null;
+      h('span', { class: 'qn' }, `#${i + 1}`), h('span', { class: 'nm', text: x.name || who(x.player).name }),
+      h('span', { class: 'q' }, h('span', { text: x.body }), appealNote(x)),
+      stamp(x.answer),
+      h('span', { class: 'qact' }, likeBtn(x), canAppeal(x) ? appealBtn(x, true) : null))))) : null;
 
   const rates = index().rates.get(pid) || new Map(), mine = rates.get(me);
   const cnt = v => [...rates.values()].filter(x => x === v).length;
@@ -1296,10 +1319,9 @@ function entry(pid, x, d, kind, rv) {
     if (done && x.note && NOTES[x.note]) meta.push(h('span', { class: 'tag' }, NOTES[x.note]));
     if (done) for (const f of x.facts || []) { const ff = P[pid].facts.find(z => z.id === f); if (ff && d.revealed.get(f)?.ev === x.id) meta.push(h('span', { class: 'tag found' }, (ff.need ? '★ 키워드 발견: ' : '+ 보너스 키워드: ') + label(f))); }
     if (done && x.hot) meta.push(h('span', { class: 'tag hot', title: HEAT_HELP }, '수프가 데워졌어요'));
-    if (x.appeal === 'pending') meta.push(h('span', { class: 'tag' }, h('span', { class: 'dots' }, '이의 제기 · 다시 판정 중')));
-    else if (x.appeal === 'done') meta.push(h('span', { class: 'tag' }, x.prev && x.prev !== x.answer ? `이의 받아들여짐 · ${x.prev} → ${x.answer}` : '이의 검토 · 판정 유지'));
-    else if (x.appeal === 'error') meta.push(h('span', { class: 'tag' }, '이의 검토 실패'));
-    else if (done && x.answer !== '반려' && !d.over && !look) meta.push(h('button', { class: 'flag', type: 'button', title: '판정이 이상하면 다시 판정을 요청해요', onclick: () => appeal(x) }, '🚩 이의'));
+    const an = appealNote(x);
+    if (an) meta.push(an);
+    if (!look && canAppeal(x)) meta.push(appealBtn(x, !!d.over));
     if (done && x.answer !== '반려') meta.push(h('button', { class: 'flag' + (S.pins.has(x.id) ? ' on' : ''), type: 'button', 'aria-pressed': String(S.pins.has(x.id)), onclick: () => togglePin(x.id) }, S.pins.has(x.id) ? '노트에 담김' : '노트에 담기'));
     if (done && x.answer !== '반려' && d.over) meta.push(likeBtn(x));
     if (errTag) meta.push(errTag);
@@ -1474,6 +1496,11 @@ function feedbackSheet(p) {
     h('h3', { text: `「${p.title}」 받은 평가` }),
     h('p', { class: 'fb-sum' }, `이야기 ★ ${avgOf(p).toFixed(1)} (${p.rating_n}명) · 판정 만족 ★ ${judgeAvg(p).toFixed(1)} (${p.judge_n}명) · 플레이 ${p.plays} · 해결 ${p.solves}`),
     reps.length ? h('p', { class: 'fb-rep' }, '신고 · ' + reps.map(([k, n]) => `${REPORT_TEXT[k] || k} ${n}`).join(' · ')) : null,
+    (p.fixes || []).length ? h('div', { class: 'fb-fix' },
+      h('p', { class: 'v-lbl' }, `이의로 판정이 바뀐 질문 ${p.fixes.length}`),
+      h('ul', { class: 'fb-list' }, p.fixes.map(f => h('li', null,
+        h('p', { class: 'fb-who' }, h('b', null, `${f.was} → ${f.now}`), h('small', null, f.late ? '끝난 뒤 이의' : '게임 중 이의')),
+        h('p', { text: f.q }))))) : null,
     notes.length ? h('ul', { class: 'fb-list' }, notes.map(n => h('li', null,
       h('p', { class: 'fb-who' }, h('b', { text: n.name || '손님' }), h('small', null, [n.stars ? `이야기 ★${n.stars}` : null, n.judge ? `판정 ★${n.judge}` : null, n.at ? new Date(n.at).toLocaleDateString('ko-KR') : null].filter(Boolean).join(' · '))),
       h('p', { text: n.t })))) : h('p', { class: 'fb-sum' }, '아직 받은 한 줄 후기가 없어요.'),

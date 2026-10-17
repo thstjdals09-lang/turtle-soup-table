@@ -1077,3 +1077,12 @@ button.ugc-by:hover{color:var(--accent-strong)}
   .sc-prop{padding:4px 8px;font-size:12px}
   .sc-prop .btn.small{padding:4px 10px;min-height:0}
 }
+
+/* 결과 화면 심문 기록: 이의 */
+.qrow .q{display:flex;flex-direction:column;gap:4px;min-width:0}
+.qrow .q .tag{align-self:flex-start;font-size:11.5px}
+.tag.fixed{border-color:#5A4A26;color:#F6E2A6;background:#1A160C}
+.qrow .qact{display:flex;align-items:center;gap:6px}
+.qrow .qact .flag{white-space:nowrap}
+.fb-fix{display:flex;flex-direction:column;gap:6px}
+@media (max-width:560px){.qrow .qact{grid-area:lk;justify-self:end}.qrow .like{grid-area:auto}}

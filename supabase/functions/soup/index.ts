@@ -265,7 +265,8 @@ async function appeal(b: Row) {
   const { player } = who(b);
   const r = await room(b.code);
   const e = await eventById(b.id, r.code);
-  if (e.kind !== "q" || e.status !== "done" || e.answer === "반려" || e.appeal) throw new Fail("not_appealable");
+  // 질문마다 한 번 (검토가 실패했으면 다시). 끝난 사건도 받되 결과는 바꾸지 않는다 (saveJudge)
+  if (e.kind !== "q" || e.status !== "done" || e.answer === "반려" || (e.appeal && e.appeal !== "error")) throw new Fail("not_appealable");
   if (e.scope !== "coop" && e.scope !== player) throw new Fail("not_yours");
   await budget();
   await patch(e.id, { appeal: "pending", prev: e.answer });
@@ -277,8 +278,26 @@ async function saveJudge(e: Row, out: unknown, appealing: boolean) {
   const s = await puzzleOf(e.puzzle);
   const d = derive(s.meta, (await eventsOf(e.room, e.puzzle, e.scope)).filter((x) => x.id !== e.id));
   const row: Row = { status: "done", ...cleanJudge(s, d, out), err: null };
-  if (appealing) row.appeal = "done";
+  if (appealing) {
+    // 끝난 사건의 이의: 판정 · 키워드 · 문수는 그대로 두고, 다시 내린 판정만 prev 에 적는다 (appeal "late")
+    if (d.over) {
+      await patchIfWaiting(e.id, { appeal: "late", prev: row.answer, err: null }, "appeal");
+      if (row.answer !== e.answer) await customFix(e, e.answer, row.answer, true);
+      return;
+    }
+    row.appeal = "done";
+    if (row.answer !== e.answer) await customFix(e, e.answer, row.answer, false);
+  }
   await patchIfWaiting(e.id, row, appealing ? "appeal" : "status");
+}
+// 창작 사건: 이의로 판정이 바뀐 질문을 만든 사람의 "받은 후기"에 모은다 (판정 메모를 보강하라고)
+async function customFix(e: Row, was: string, now_: string, late: boolean) {
+  if (!CUSTOM_RE.test(e.puzzle)) return;
+  try {
+    const s = await customRow(e.puzzle);
+    s.fixes = [...(s.fixes || []), { q: str(e.body, 160), was, now: now_, late, at: now() }].slice(-50);
+    await customSave(e.puzzle, s);
+  } catch (err) { console.error("custom fix:", err); }
 }
 async function saveGrade(e: Row, out: unknown) {
   const s = await puzzleOf(e.puzzle);
@@ -299,7 +318,7 @@ async function patchIfWaiting(id: number, row: Row, field: string) {
 async function failJudge(id: number, err: unknown, appealing: boolean) {
   const code = errCode(err);
   console.error("soup judge:", code, err);
-  if (code === "gemini_busy") await patch(id, { err: code });
+  if (code === "gemini_busy" && !appealing) await patch(id, { err: code });
   else await patch(id, appealing ? { appeal: "error", err: code } : { status: "error", err: code });
 }
 async function judgeAndSave(id: number, appealFrom: string | null) {
@@ -496,6 +515,7 @@ function publicCard(id: string, s: Row, player = "") {
     ...(mine ? {
       notes: Object.values(s.notes || {}).sort((a: Row, b: Row) => String(b.at).localeCompare(String(a.at))).slice(0, 50),
       reports: Object.values(s.reports || {}).reduce((m: Row, w) => ({ ...m, [w as string]: (m[w as string] || 0) + 1 }), {}),
+      fixes: [...(s.fixes || [])].reverse().slice(0, 30),
     } : {}),
   };
 }
